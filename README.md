@@ -1,98 +1,138 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Role API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS backend for **Role** — a Too Good To Go–style surplus food marketplace.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+The mobile app currently talks to Supabase directly. This API is the BFF that will own business rules (stock, order lifecycle, payments later) while Supabase remains the source of truth for Postgres schema and Auth.
 
-## Description
+## Stack
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- **NestJS 11** (Express)
+- **Drizzle ORM** + `postgres` (Supabase pooler, `prepare: false`)
+- **Supabase Auth** JWT verification (`jose`)
+- **Zod** validation (+ shared types from `@0xc1x/role-commons`)
+- **Scalar** OpenAPI UI at `/docs`
 
-## Project setup
+## Quick start
 
 ```bash
-$ npm install
+# 1) Build shared package (sibling repo)
+cd ../role-commons && bun run build
+
+# 2) Install API deps
+cd ../role-api && npm install
+
+# 3) Configure env
+cp .env.example .env
+# fill DATABASE_URL, SUPABASE_URL, SUPABASE_JWT_SECRET
+
+# 4) Run
+npm run start:dev
 ```
 
-## Compile and run the project
+- Health: `GET http://localhost:3000/api/v1/health`
+- Docs: `http://localhost:3000/docs`
+
+## Environment
+
+| Variable | Description |
+|----------|-------------|
+| `PORT` | HTTP port (default `3000`) |
+| `DATABASE_URL` | Postgres URL (prefer Supabase **Transaction** pooler `:6543`) |
+| `SUPABASE_URL` | Project URL |
+| `SUPABASE_JWT_SECRET` | JWT secret from Supabase → Project Settings → API |
+| `CORS_ORIGINS` | `*` or comma-separated origins |
+
+Schema ownership: **Supabase**. Do not push Drizzle migrations from this repo in v1. Hand-written Drizzle tables mirror `public` for offers/orders/profiles/businesses. Optional:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm run db:pull    # introspect remote (review before overwriting)
+npm run db:studio
 ```
 
-## Run tests
+## Auth
+
+Send Supabase access tokens:
+
+```http
+Authorization: Bearer <supabase_access_token>
+```
+
+- JWT verified with `SUPABASE_JWT_SECRET` (HS256)
+- `role` loaded from `public.profiles` (not from client `user_metadata`)
+- `@Public()` routes: health + offer list/detail
+- Orders require authentication
+
+## API surface (v1)
+
+| Method | Path | Auth | Notes |
+|--------|------|------|--------|
+| `GET` | `/api/v1/health` | public | DB ping |
+| `GET` | `/api/v1/offers` | public | Filters: category, geo, pagination |
+| `GET` | `/api/v1/offers/:id` | public | Detail + business/location |
+| `POST` | `/api/v1/orders` | user | `{ offer_id }` — stock transaction |
+| `GET` | `/api/v1/orders` | user | My orders |
+| `GET` | `/api/v1/orders/:id` | owner / business / admin | |
+| `PATCH` | `/api/v1/orders/:id/status` | role rules | State machine |
+
+### Order status machine
+
+```
+pending → confirmed | cancelled | expired
+confirmed → ready_for_pickup | cancelled
+ready_for_pickup → picked_up | cancelled | expired
+picked_up → completed
+```
+
+Each transition writes `order_events`.
+
+## Project layout
+
+```
+src/
+  auth/           # JWT guard, roles guard
+  common/         # filters, pipes, decorators
+  config/         # Zod env validation
+  database/       # Drizzle module + schema
+  modules/
+    health/
+    offers/
+    orders/
+  main.ts
+  app.module.ts
+```
+
+## Shared package
+
+```json
+"@0xc1x/role-commons": "file:../role-commons"
+```
+
+Rebuild commons after type changes:
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+cd ../role-commons && bun run build
+# if npm link cache is stale: cd ../role-api && npm install
 ```
 
-## Deployment
+## Scripts
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+| Script | Purpose |
+|--------|---------|
+| `npm run start:dev` | Watch mode |
+| `npm run build` | Compile |
+| `npm test` | Unit tests (incl. order state machine) |
+| `npm run lint` | ESLint |
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Security notes
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+- Never expose the Supabase **service_role** key to the mobile app.
+- The API uses a privileged DB connection; **authorization is enforced in Nest** (owner / business owner / admin checks).
+- Do not trust `user_metadata` for roles.
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Roadmap (next waves)
 
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- Business portal: manage offers, hours, locations
+- Favorites, reviews, saved addresses
+- Payments / coupons / payouts
+- Notifications & device tokens
+- Point mobile clients at this API
