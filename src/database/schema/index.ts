@@ -4,12 +4,15 @@ export * from './businesses';
 export * from './business-locations';
 export * from './offers';
 export * from './orders';
+export * from './categories';
 
 import { businessLocations } from './business-locations';
 import { businesses } from './businesses';
 import { offers } from './offers';
 import { orderEvents, orders } from './orders';
 import { profiles } from './profiles';
+import { categories } from './categories';
+
 
 /** Schema map passed to drizzle() for typed queries. */
 export const schema = {
@@ -19,6 +22,7 @@ export const schema = {
   offers,
   orders,
   orderEvents,
+  categories
 };
 
 export type DatabaseSchema = typeof schema;

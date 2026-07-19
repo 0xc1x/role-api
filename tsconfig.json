@@ -1,25 +1,33 @@
 {
   "compilerOptions": {
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "resolvePackageJsonExports": true,
-    "esModuleInterop": true,
-    "isolatedModules": true,
-    "declaration": true,
-    "removeComments": true,
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
-    "allowSyntheticDefaultImports": true,
+    "module": "commonjs", // Estándar y óptimo para el monolito de NestJS
+    "moduleResolution": "node", // Resolución rápida y compatible con el ecosistema
     "target": "ES2023",
-    "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    // Configuración para el Caché Incremental Correcto
     "incremental": true,
-    "skipLibCheck": true,
-    "strictNullChecks": true,
+    "tsBuildInfoFile": "./.tsbuildinfo", // Guarda el caché fuera de 'dist' para que no se borre
+    // Decoradores obligatorios para NestJS y TypeORM/Prisma
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    // Interoperabilidad y Seguridad Básica
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true, // ¡Vital! Evita revisar los tipos de todo node_modules
     "forceConsistentCasingInFileNames": true,
+    // Flexibilidad de tipos (Manteniendo tus reglas actuales)
+    "strictNullChecks": true,
     "noImplicitAny": false,
     "strictBindCallApply": false,
-    "noFallthroughCasesInSwitch": false
-  }
+    "noFallthroughCasesInSwitch": false,
+    "removeComments": true,
+    "sourceMap": true
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.spec.ts", // Evita compilar archivos de prueba al arrancar la API
+    "**/*.test.ts"
+  ]
 }

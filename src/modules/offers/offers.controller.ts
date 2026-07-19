@@ -1,6 +1,5 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import {
-  ApiBearerAuth,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -30,7 +29,6 @@ export class OffersController {
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'Get offer detail' })
-  @ApiBearerAuth()
   @ApiOkResponse({ description: 'Offer detail with business and location' })
   getById(@Param('id', ParseUUIDPipe) id: string) {
     return this.offersService.getById(id);

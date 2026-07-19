@@ -7,7 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { createSecretKey } from 'node:crypto';
-import { jwtVerify } from 'jose';
+import { createRemoteJWKSet, decodeProtectedHeader, jwtVerify } from 'jose';
 import { eq } from 'drizzle-orm';
 import { Inject } from '@nestjs/common';
 import type { AppRole } from '@0xc1x/role-commons';
@@ -20,11 +20,18 @@ import type { AuthUser } from './auth.types';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
+  private readonly jwks: ReturnType<typeof createRemoteJWKSet>;
+
   constructor(
     private readonly reflector: Reflector,
     private readonly config: ConfigService<Env, true>,
     @Inject(DRIZZLE) private readonly db: Database,
-  ) {}
+  ) {
+    const supabaseUrl = this.config.get('SUPABASE_URL', { infer: true });
+    this.jwks = createRemoteJWKSet(
+      new URL(`${supabaseUrl}/auth/v1/.well-known/jwks.json`),
+    );
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -52,11 +59,23 @@ export class AuthGuard implements CanActivate {
     let email: string | null = null;
 
     try {
-      const secret = this.config.get('SUPABASE_JWT_SECRET', { infer: true });
-      const key = createSecretKey(Buffer.from(secret, 'utf8'));
-      const { payload } = await jwtVerify(token, key, {
-        algorithms: ['HS256'],
-      });
+      const { alg } = decodeProtectedHeader(token);
+
+      let payload: { sub?: string; email?: string; user_email?: string };
+
+      if (alg === 'HS256') {
+        const secret = this.config.get('SUPABASE_JWT_SECRET', { infer: true });
+        const key = createSecretKey(Buffer.from(secret, 'utf8'));
+        const result = await jwtVerify(token, key, {
+          algorithms: ['HS256'],
+        });
+        payload = result.payload;
+      } else {
+        const result = await jwtVerify(token, this.jwks, {
+          algorithms: ['ES256'],
+        });
+        payload = result.payload;
+      }
 
       if (!payload.sub || typeof payload.sub !== 'string') {
         throw new UnauthorizedException('Invalid token subject');

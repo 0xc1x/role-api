@@ -13,7 +13,7 @@ import type { Env } from '../../config/env.schema';
 import { type Database } from '../../database/database.module';
 import { DRIZZLE } from '../../database/database.tokens';
 import { profiles } from '../../database/schema';
-import type { LoginRequest, RegisterRequest } from '@0xc1x/role-commons';
+import type { LoginRequest, RegisterRequest, RefreshRequest } from '@0xc1x/role-commons';
 
 @Injectable()
 export class AuthService {
@@ -30,7 +30,12 @@ export class AuthService {
       infer: true,
     });
 
-    this.supabaseAnon = createClient(url, anonKey);
+    this.supabaseAnon = createClient(url, anonKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
     this.supabaseAdmin = createClient(url, serviceRoleKey, {
       auth: {
         autoRefreshToken: false,
@@ -146,6 +151,55 @@ export class AuthService {
         avatar_url: null,
         role: 'admin' as const,
       },
+    };
+  }
+
+  async refresh(body: RefreshRequest) {
+    const { data, error } = await this.supabaseAnon.auth.refreshSession({
+      refresh_token: body.refresh_token,
+    });
+
+    if (error || !data.session) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    const session = data.session;
+    const user = data.user;
+
+    const [profile] = await this.db
+      .select({
+        id: profiles.id,
+        email: profiles.email,
+        full_name: profiles.full_name,
+        avatar_url: profiles.avatar_url,
+        role: profiles.role,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, user.id))
+      .limit(1);
+
+    return {
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_in: session.expires_in,
+      expires_at: session.expires_at
+        ? new Date(session.expires_at * 1000).toISOString()
+        : null,
+      user: profile
+        ? {
+            id: profile.id,
+            email: profile.email,
+            full_name: profile.full_name,
+            avatar_url: profile.avatar_url,
+            role: profile.role,
+          }
+        : {
+            id: user.id,
+            email: user.email,
+            full_name: null,
+            avatar_url: null,
+            role: 'user' as const,
+          },
     };
   }
 }

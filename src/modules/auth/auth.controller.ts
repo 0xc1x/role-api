@@ -15,8 +15,9 @@ import { AuthService } from './auth.service';
 import {
   LoginRequestSchema,
   RegisterRequestSchema,
+  RefreshRequestSchema,
 } from '@0xc1x/role-commons';
-import type { LoginRequest, RegisterRequest } from '@0xc1x/role-commons';
+import type { LoginRequest, RegisterRequest, RefreshRequest } from '@0xc1x/role-commons';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -45,6 +46,17 @@ export class AuthController {
     body: RegisterRequest,
   ) {
     return this.authService.register(body);
+  }
+
+  @Public()
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refresh access token' })
+  refresh(
+    @Body(new ZodValidationPipe(RefreshRequestSchema))
+    body: RefreshRequest,
+  ) {
+    return this.authService.refresh(body);
   }
 
   @Get('me')

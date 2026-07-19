@@ -1,8 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { apiReference } from '@scalar/nestjs-api-reference';
+import { spec } from './openapi/spec';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { parseCorsOrigins, type Env } from './config/env.schema';
@@ -22,36 +22,10 @@ async function bootstrap() {
   app.enableCors({ origin: corsOrigins, credentials: true });
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  const openApiConfig = new DocumentBuilder()
-    .setTitle('Role API')
-    .setDescription(
-      'Backend API for Role (Too Good To Go–style surplus food marketplace). ' +
-        'Clients authenticate with Supabase Auth access tokens (Bearer JWT).',
-    )
-    .setVersion('1.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description: 'Supabase Auth access_token',
-      },
-      'bearer',
-    )
-    .addTag('Auth')
-    .addTag('Health')
-    .addTag('Offers')
-    .addTag('Orders')
-    .build();
-
-  const document = SwaggerModule.createDocument(app, openApiConfig);
-  // Prefer Scalar UI; document remains available for tooling.
   app.use(
     '/docs',
     apiReference({
-      spec: {
-        content: document,
-      },
+      spec: { content: spec },
       theme: 'purple',
     }),
   );
