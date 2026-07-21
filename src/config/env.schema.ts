@@ -16,6 +16,12 @@ export const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z
     .string()
     .min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
+  /** Supabase Storage bucket name for image uploads */
+  SUPABASE_STORAGE_BUCKET: z.string().min(1).default('images'),
+  /** Comma-separated allowed buckets (allowlist). Default: the default bucket */
+  SUPABASE_ALLOWED_BUCKETS: z.string().default('images'),
+  /** Comma-separated allowed folders (allowlist). Default: categories */
+  SUPABASE_ALLOWED_FOLDERS: z.string().default('categories'),
   /** Comma-separated origins, or `*` for all */
   CORS_ORIGINS: z.string().default('*'),
 });

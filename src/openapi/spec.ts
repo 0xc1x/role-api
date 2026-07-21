@@ -295,6 +295,54 @@ Los clientes se autentican con tokens de acceso de Supabase Auth (Bearer JWT).`,
         },
       },
     },
+    '/upload/image': {
+      post: {
+        tags: ['Upload'],
+        summary: 'Subir una imagen (admin)',
+        description: `Sube un archivo de imagen, lo comprime y convierte a WebP (máx. 800px, calidad 80), y lo almacena en Supabase Storage.
+
+El archivo se guarda en \`categories/{uuid}.webp\` dentro del bucket configurado.
+Solo se aceptan JPEG, PNG y WebP de hasta 5 MB.
+
+**Flujo recomendado:**
+1. Subir la imagen → obtener la \`url\`
+2. Usar esa \`url\` como \`image_url\` al crear o actualizar una categoría.`,
+        operationId: 'uploadImage',
+        security: [{ bearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                properties: {
+                  file: {
+                    type: 'string',
+                    format: 'binary',
+                    description: 'Archivo de imagen (JPEG, PNG o WebP, máx. 5 MB)',
+                  },
+                },
+                required: ['file'],
+              },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Imagen subida exitosamente',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/UploadImageResponse' },
+              },
+            },
+          },
+          '400': { description: 'Archivo inválido, formato no soportado o excede 5 MB' },
+          '401': { description: 'No autorizado' },
+          '403': { description: 'Requiere rol admin' },
+          '500': { description: 'Error al subir la imagen a Storage' },
+        },
+      },
+    },
     '/orders/{id}/status': {
       patch: {
         tags: ['Orders'],
@@ -578,6 +626,21 @@ Los clientes se autentican con tokens de acceso de Supabase Auth (Bearer JWT).`,
         },
         required: ['data', 'meta'],
       },
+      // ─── Upload ────────────────────────────────────────────────────
+      UploadImageResponse: {
+        type: 'object',
+        description: 'URL pública de la imagen subida y comprimida en WebP.',
+        properties: {
+          url: {
+            type: 'string',
+            format: 'uri',
+            example: 'https://[project].supabase.co/storage/v1/object/public/images/categories/a1b2c3d4.webp',
+            description: 'URL pública para usar como image_url en categorías, ofertas, etc.',
+          },
+        },
+        required: ['url'],
+      },
+
       PaginatedCategoryResponse: {
         type: 'object',
         properties: {
@@ -594,5 +657,6 @@ Los clientes se autentican con tokens de acceso de Supabase Auth (Bearer JWT).`,
     { name: 'Categories', description: 'Catálogo de categorías de comida' },
     { name: 'Offers', description: 'Ofertas de comida excedente disponibles' },
     { name: 'Orders', description: 'Gestión de órdenes y reservas' },
+    { name: 'Upload', description: 'Subida de imágenes a Supabase Storage' },
   ],
 };

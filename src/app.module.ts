@@ -8,6 +8,7 @@ import { AuthModule as AuthFeatureModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { UploadModule } from './modules/upload/upload.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { OrdersModule } from './modules/orders/orders.module';
     CategoriesModule,
     OffersModule,
     OrdersModule,
+    UploadModule,
   ],
 })
 export class AppModule {}
