@@ -36,7 +36,7 @@ export class UploadService {
   }
 
   async uploadImage(
-    file: Express.Multer.File,
+    file: { buffer: Buffer; mimetype?: string; originalname?: string },
     options?: UploadOptions,
   ): Promise<{ url: string; path: string }> {
     const bucket = options?.bucket ?? this.config.get('SUPABASE_STORAGE_BUCKET', { infer: true }) ?? 'images';

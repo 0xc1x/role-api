@@ -9,6 +9,7 @@ import { CategoriesModule } from './modules/categories/categories.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { UploadModule } from './modules/upload/upload.module';
+import { SlidesModules } from './modules/slides/slides.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { UploadModule } from './modules/upload/upload.module';
     OffersModule,
     OrdersModule,
     UploadModule,
+    SlidesModules
   ],
 })
-export class AppModule {}
+export class AppModule { }
