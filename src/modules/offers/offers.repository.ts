@@ -51,9 +51,73 @@ export type OfferListRow = {
   location_zone: string | null;
 };
 
+export type OfferRow = typeof offers.$inferSelect;
+export type OfferInsert = typeof offers.$inferInsert;
+export type OfferUpdate = Partial<
+  Pick<
+    OfferInsert,
+    | 'title'
+    | 'description'
+    | 'image'
+    | 'category'
+    | 'original_price'
+    | 'discounted_price'
+    | 'stock'
+    | 'initial_stock'
+    | 'pickup_start'
+    | 'pickup_end'
+    | 'is_active'
+    | 'includes'
+    | 'allergens'
+    | 'business_location_id'
+  >
+>;
+
+export type DbExecutor = Database;
+
 @Injectable()
 export class OffersRepository {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
+
+  transaction<T>(fn: (tx: DbExecutor) => Promise<T>): Promise<T> {
+    return this.db.transaction(fn);
+  }
+
+  async insert(
+    executor: DbExecutor,
+    values: OfferInsert,
+  ): Promise<OfferRow> {
+    const [row] = await executor.insert(offers).values(values).returning();
+    if (!row) {
+      throw new Error('Failed to insert offer');
+    }
+    return row;
+  }
+
+  async update(
+    executor: DbExecutor,
+    id: string,
+    values: OfferUpdate,
+  ): Promise<OfferRow | null> {
+    const [row] = await executor
+      .update(offers)
+      .set({ ...values, updated_at: sql`now()` })
+      .where(eq(offers.id, id))
+      .returning();
+    return row ?? null;
+  }
+
+  async findDtoById(
+    id: string,
+    executor: DbExecutor = this.db,
+  ): Promise<OfferRow | null> {
+    const [row] = await executor
+      .select()
+      .from(offers)
+      .where(eq(offers.id, id))
+      .limit(1);
+    return row ?? null;
+  }
 
   private baseSelect() {
     return this.db

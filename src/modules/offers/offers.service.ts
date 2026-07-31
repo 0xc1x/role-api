@@ -1,8 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { toNumber, toNumberOrNull } from '../../common/utils/numeric';
-import type { OfferListRow } from './offers.repository';
+import type { OfferListRow, OfferRow, OfferUpdate } from './offers.repository';
 import { OffersRepository } from './offers.repository';
-import type { ListOffersQuery } from '@0xc1x/role-commons';
+import type {
+  CreateOfferDto,
+  ListOffersQuery,
+  OfferDto,
+  UpdateOfferDto,
+} from '@0xc1x/role-commons';
 
 export type OfferResponse = {
   id: string;
@@ -66,6 +71,100 @@ export class OffersService {
       throw new NotFoundException(`Offer ${id} not found`);
     }
     return this.toResponse(row);
+  }
+
+  async create(body: CreateOfferDto): Promise<OfferDto> {
+    const created = await this.offersRepository.transaction(async (tx) => {
+      return this.offersRepository.insert(tx, {
+        business_id: body.business_id,
+        business_location_id: body.business_location_id,
+        title: body.title,
+        description: body.description ?? null,
+        image: body.image ?? null,
+        category: body.category ?? null,
+        original_price: body.original_price.toString(),
+        discounted_price: body.discounted_price.toString(),
+        stock: body.stock ?? 1,
+        initial_stock: body.initial_stock ?? 1,
+        pickup_start: new Date(body.pickup_start),
+        pickup_end: new Date(body.pickup_end),
+        is_active: body.is_active ?? true,
+        includes: body.includes ?? null,
+        allergens: body.allergens ?? null,
+      });
+    });
+    return this.toOfferDto(created);
+  }
+
+  async update(id: string, body: UpdateOfferDto): Promise<OfferDto> {
+    const existing = await this.offersRepository.findDtoById(id);
+    if (!existing) {
+      throw new NotFoundException(`Offer ${id} not found`);
+    }
+
+    const patch: OfferUpdate = {};
+    if (body.title !== undefined) patch.title = body.title;
+    if (body.description !== undefined) patch.description = body.description;
+    if (body.image !== undefined) patch.image = body.image;
+    if (body.category !== undefined) patch.category = body.category;
+    if (body.original_price !== undefined) patch.original_price = body.original_price.toString();
+    if (body.discounted_price !== undefined) patch.discounted_price = body.discounted_price.toString();
+    if (body.stock !== undefined) patch.stock = body.stock;
+    if (body.initial_stock !== undefined) patch.initial_stock = body.initial_stock;
+    if (body.pickup_start !== undefined) patch.pickup_start = new Date(body.pickup_start);
+    if (body.pickup_end !== undefined) patch.pickup_end = new Date(body.pickup_end);
+    if (body.is_active !== undefined) patch.is_active = body.is_active;
+    if (body.includes !== undefined) patch.includes = body.includes;
+    if (body.allergens !== undefined) patch.allergens = body.allergens;
+    if (body.business_location_id !== undefined) patch.business_location_id = body.business_location_id;
+
+    const updated = await this.offersRepository.transaction(async (tx) => {
+      const row = await this.offersRepository.update(tx, id, patch);
+      if (!row) {
+        throw new NotFoundException(`Offer ${id} not found`);
+      }
+      return row;
+    });
+
+    return this.toOfferDto(updated);
+  }
+
+  async remove(id: string): Promise<void> {
+    await this.offersRepository.transaction(async (tx) => {
+      const row = await this.offersRepository.update(tx, id, {
+        is_active: false,
+      });
+      if (!row) {
+        throw new NotFoundException(`Offer ${id} not found`);
+      }
+      return row;
+    });
+  }
+
+  private toOfferDto(row: OfferRow): OfferDto {
+    return {
+      id: row.id,
+      business_id: row.business_id,
+      business_location_id: row.business_location_id,
+      title: row.title,
+      description: row.description,
+      image: row.image,
+      category: row.category,
+      original_price: toNumber(row.original_price),
+      discounted_price: toNumber(row.discounted_price),
+      discount_percentage: toNumberOrNull(row.discount_percentage),
+      stock: row.stock,
+      initial_stock: row.initial_stock,
+      pickup_start: row.pickup_start.toISOString(),
+      pickup_end: row.pickup_end.toISOString(),
+      is_active: row.is_active,
+      includes: row.includes,
+      allergens: row.allergens,
+      rating: toNumber(row.rating),
+      review_count: row.review_count,
+      created_at: row.created_at.toISOString(),
+      updated_at: row.updated_at.toISOString(),
+    };
   }
 
   private toResponse(row: OfferListRow): OfferResponse {
