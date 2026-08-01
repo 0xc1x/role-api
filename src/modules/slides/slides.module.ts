@@ -9,4 +9,4 @@ import { SlidesRepository } from './slides.repository';
     exports: [SlidesService, SlidesRepository],
 })
 
-export class SlidesModules { }
+export class SlidesModule { }

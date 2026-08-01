@@ -87,7 +87,7 @@ describe('UploadService', () => {
       expect(uploadCall[2].contentType).toBe('image/webp');
     });
 
-    it('should resize large images to max 800px', async () => {
+    it('should resize large images to max 1920px', async () => {
       const largeBuffer = await sharp({
         create: {
           width: 3000,
@@ -106,8 +106,8 @@ describe('UploadService', () => {
       const uploadedBuffer = mockSupabase.storage.upload.mock.calls[0][1];
       const metadata = await sharp(uploadedBuffer).metadata();
 
-      expect(metadata.width).toBeLessThanOrEqual(800);
-      expect(metadata.height).toBeLessThanOrEqual(800);
+      expect(metadata.width).toBeLessThanOrEqual(1920);
+      expect(metadata.height).toBeLessThanOrEqual(1920);
     });
 
     it('should throw on upload error', async () => {

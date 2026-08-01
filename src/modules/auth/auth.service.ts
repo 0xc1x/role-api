@@ -117,7 +117,7 @@ export class AuthService {
       id: user.id,
       email: body.email,
       full_name: body.full_name,
-      role: 'admin',
+      role: 'user',
     });
 
     const { data: signInData, error: signInError } =
@@ -149,7 +149,7 @@ export class AuthService {
         email: body.email,
         full_name: body.full_name,
         avatar_url: null,
-        role: 'admin' as const,
+        role: 'user' as const,
       },
     };
   }

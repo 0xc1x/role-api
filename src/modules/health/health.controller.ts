@@ -1,4 +1,4 @@
-import { Controller, Get, Inject } from '@nestjs/common';
+import { Controller, Get, Inject, HttpStatus, HttpException } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { sql } from 'drizzle-orm';
 import { Public } from '../../common/decorators/public.decorator';
@@ -22,8 +22,21 @@ export class HealthController {
       database = 'down';
     }
 
+    const status = database === 'up' ? 'ok' : 'degraded';
+
+    if (database === 'down') {
+      throw new HttpException(
+        {
+          status: 'degraded',
+          database,
+          timestamp: new Date().toISOString(),
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
     return {
-      status: database === 'up' ? 'ok' : 'degraded',
+      status,
       database,
       timestamp: new Date().toISOString(),
     };

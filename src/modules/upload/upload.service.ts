@@ -9,6 +9,10 @@ export interface UploadOptions {
   folder?: string;
 }
 
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_DIMENSION = 1920;
+const MAX_FILE_SIZE_AFTER_COMPRESSION = 2 * 1024 * 1024; // 2MB
+
 @Injectable()
 export class UploadService {
   private supabase;
@@ -50,13 +54,45 @@ export class UploadService {
       throw new BadRequestException(`Carpeta "${folder}" no permitida`);
     }
 
-    const ext = '.webp';
-    const path = `${folder}/${crypto.randomUUID()}${ext}`;
+    // Validate magic bytes using sharp - it throws if not a valid image
+    let metadata;
+    try {
+      metadata = await sharp(file.buffer).metadata();
+    } catch {
+      throw new BadRequestException('Formato de archivo no válido. Solo JPEG, PNG y WebP son permitidos');
+    }
 
+    // Check detected format
+    if (!metadata.format || !ALLOWED_MIME_TYPES.includes(`image/${metadata.format}`)) {
+      throw new BadRequestException('Formato de archivo no válido. Solo JPEG, PNG y WebP son permitidos');
+    }
+
+    // Process with sharp
     const compressed = await sharp(file.buffer)
-      .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+      .resize(MAX_DIMENSION, MAX_DIMENSION, {
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
       .webp({ quality: 80 })
       .toBuffer();
+
+    // Check compressed file size
+    if (compressed.length > MAX_FILE_SIZE_AFTER_COMPRESSION) {
+      throw new BadRequestException(
+        `El archivo comprimido excede el tamaño máximo permitido (${MAX_FILE_SIZE_AFTER_COMPRESSION / 1024 / 1024}MB)`,
+      );
+    }
+
+    // Verify dimensions after compression
+    const compressedMetadata = await sharp(compressed).metadata();
+    if ((compressedMetadata.width ?? 0) > MAX_DIMENSION || (compressedMetadata.height ?? 0) > MAX_DIMENSION) {
+      throw new BadRequestException(
+        `Las dimensiones de la imagen exceden el máximo permitido (${MAX_DIMENSION}px)`,
+      );
+    }
+
+    const ext = '.webp';
+    const path = `${folder}/${crypto.randomUUID()}${ext}`;
 
     const { error } = await this.supabase.storage
       .from(bucket)

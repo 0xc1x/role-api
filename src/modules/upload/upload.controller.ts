@@ -20,6 +20,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UploadService } from './upload.service';
 
@@ -51,6 +52,7 @@ class UploadImageBody {
 export class UploadController {
   constructor(private readonly uploadService: UploadService) { }
 
+  @Throttle({ upload: { limit: 5, ttl: 60000 } })
   @Post('image')
   @Roles('admin')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: FIVE_MB } }))
@@ -86,10 +88,10 @@ export class UploadController {
           ...(process.env.NODE_ENV === 'test'
             ? []
             : [
-              new FileTypeValidator({
-                fileType: /(image\/jpeg|image\/png|image\/webp)$/,
-              }),
-            ]),
+                new FileTypeValidator({
+                  fileType: /(image\/jpeg|image\/png|image\/webp)$/,
+                }),
+              ]),
         ],
         fileIsRequired: true,
       }),

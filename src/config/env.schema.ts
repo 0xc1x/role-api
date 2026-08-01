@@ -22,8 +22,12 @@ export const envSchema = z.object({
   SUPABASE_ALLOWED_BUCKETS: z.string().default('images'),
   /** Comma-separated allowed folders (allowlist). Default: categories */
   SUPABASE_ALLOWED_FOLDERS: z.string().default('categories'),
-  /** Comma-separated origins, or `*` for all */
-  CORS_ORIGINS: z.string().default('*'),
+  /** Comma-separated origins for CORS. Required in production (no '*') */
+  CORS_ORIGINS: z.string().default('http://localhost:3000'),
+  /** Basic auth username for /docs in production */
+  DOCS_USER: z.string().optional(),
+  /** Basic auth password for /docs in production */
+  DOCS_PASSWORD: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -36,7 +40,21 @@ export function validateEnv(config: Record<string, unknown>): Env {
       .join('; ');
     throw new Error(`Invalid environment variables: ${details}`);
   }
-  return parsed.data;
+  const env = parsed.data;
+
+  if (env.NODE_ENV === 'production' && env.CORS_ORIGINS === '*') {
+    throw new Error(
+      'CORS_ORIGINS must be explicitly set in production (cannot be "*")',
+    );
+  }
+
+  if (env.NODE_ENV === 'production' && (!env.DOCS_USER || !env.DOCS_PASSWORD)) {
+    throw new Error(
+      'DOCS_USER and DOCS_PASSWORD must be set in production to protect /docs',
+    );
+  }
+
+  return env;
 }
 
 export function parseCorsOrigins(value: string): boolean | string[] {

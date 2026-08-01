@@ -15,6 +15,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import type { AuthUser } from '../../auth/auth.types';
@@ -36,6 +37,7 @@ import type {
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
+  @Throttle({ orders: { limit: 10, ttl: 60000 } })
   @Post()
   @ApiOperation({ summary: 'Reserve / create an order for an offer' })
   @ApiCreatedResponse({ description: 'Order created' })
