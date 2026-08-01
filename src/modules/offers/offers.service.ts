@@ -16,7 +16,12 @@ export type OfferResponse = {
   title: string;
   description: string | null;
   image: string | null;
-  category: string | null;
+  category_ids: string[];
+  categories: Array<{
+    id: string;
+    name: string;
+    slug: string;
+  }>;
   original_price: number;
   discounted_price: number;
   discount_percentage: number | null;
@@ -75,13 +80,12 @@ export class OffersService {
 
   async create(body: CreateOfferDto): Promise<OfferDto> {
     const created = await this.offersRepository.transaction(async (tx) => {
-      return this.offersRepository.insert(tx, {
+      const offer = await this.offersRepository.insert(tx, {
         business_id: body.business_id,
         business_location_id: body.business_location_id,
         title: body.title,
         description: body.description ?? null,
         image: body.image ?? null,
-        category: body.category ?? null,
         original_price: body.original_price.toString(),
         discounted_price: body.discounted_price.toString(),
         stock: body.stock ?? 1,
@@ -92,8 +96,18 @@ export class OffersService {
         includes: body.includes ?? null,
         allergens: body.allergens ?? null,
       });
+
+      await this.offersRepository.setCategories(
+        tx,
+        offer.id,
+        body.category_ids,
+      );
+
+      return offer;
     });
-    return this.toOfferDto(created);
+
+    const category_ids = await this.offersRepository.findCategoryIds(created.id);
+    return this.toOfferDto(created, category_ids);
   }
 
   async update(id: string, body: UpdateOfferDto): Promise<OfferDto> {
@@ -106,7 +120,6 @@ export class OffersService {
     if (body.title !== undefined) patch.title = body.title;
     if (body.description !== undefined) patch.description = body.description;
     if (body.image !== undefined) patch.image = body.image;
-    if (body.category !== undefined) patch.category = body.category;
     if (body.original_price !== undefined) patch.original_price = body.original_price.toString();
     if (body.discounted_price !== undefined) patch.discounted_price = body.discounted_price.toString();
     if (body.stock !== undefined) patch.stock = body.stock;
@@ -123,10 +136,16 @@ export class OffersService {
       if (!row) {
         throw new NotFoundException(`Offer ${id} not found`);
       }
+
+      if (body.category_ids !== undefined) {
+        await this.offersRepository.setCategories(tx, id, body.category_ids);
+      }
+
       return row;
     });
 
-    return this.toOfferDto(updated);
+    const category_ids = await this.offersRepository.findCategoryIds(updated.id);
+    return this.toOfferDto(updated, category_ids);
   }
 
   async remove(id: string): Promise<void> {
@@ -141,7 +160,7 @@ export class OffersService {
     });
   }
 
-  private toOfferDto(row: OfferRow): OfferDto {
+  private toOfferDto(row: OfferRow, categoryIds: string[]): OfferDto {
     return {
       id: row.id,
       business_id: row.business_id,
@@ -149,7 +168,7 @@ export class OffersService {
       title: row.title,
       description: row.description,
       image: row.image,
-      category: row.category,
+      category_ids: categoryIds,
       original_price: toNumber(row.original_price),
       discounted_price: toNumber(row.discounted_price),
       discount_percentage: toNumberOrNull(row.discount_percentage),
@@ -175,7 +194,12 @@ export class OffersService {
       title: row.title,
       description: row.description,
       image: row.image,
-      category: row.category,
+      category_ids: row.category_ids,
+      categories: row.category_ids.map((id, i) => ({
+        id,
+        name: row.category_names[i],
+        slug: row.category_slugs[i],
+      })),
       original_price: toNumber(row.original_price),
       discounted_price: toNumber(row.discounted_price),
       discount_percentage: toNumberOrNull(row.discount_percentage),

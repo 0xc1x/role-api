@@ -21,7 +21,6 @@ export const offers = pgTable('offers', {
   title: text('title').notNull(),
   description: text('description'),
   image: text('image'),
-  category: text('category'),
   original_price: numeric('original_price', { precision: 12, scale: 2 }).notNull(),
   discounted_price: numeric('discounted_price', {
     precision: 12,

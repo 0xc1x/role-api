@@ -4,8 +4,9 @@ import {
   count,
   desc,
   eq,
-  gt,
   gte,
+  gt,
+  inArray,
   sql,
   type SQL,
 } from 'drizzle-orm';
@@ -14,6 +15,8 @@ import { DRIZZLE } from '../../database/database.tokens';
 import {
   businessLocations,
   businesses,
+  categories,
+  offerCategories,
   offers,
 } from '../../database/schema';
 import type { ListOffersQuery } from '@0xc1x/role-commons';
@@ -25,7 +28,6 @@ export type OfferListRow = {
   title: string;
   description: string | null;
   image: string | null;
-  category: string | null;
   original_price: string;
   discounted_price: string;
   discount_percentage: string | null;
@@ -40,6 +42,9 @@ export type OfferListRow = {
   review_count: number;
   created_at: Date;
   updated_at: Date;
+  category_ids: string[];
+  category_names: string[];
+  category_slugs: string[];
   business_name: string;
   business_slug: string;
   business_image: string | null;
@@ -59,7 +64,6 @@ export type OfferUpdate = Partial<
     | 'title'
     | 'description'
     | 'image'
-    | 'category'
     | 'original_price'
     | 'discounted_price'
     | 'stock'
@@ -119,6 +123,32 @@ export class OffersRepository {
     return row ?? null;
   }
 
+  async setCategories(
+    executor: DbExecutor,
+    offerId: string,
+    categoryIds: string[],
+  ): Promise<void> {
+    await executor
+      .delete(offerCategories)
+      .where(eq(offerCategories.offer_id, offerId));
+    if (categoryIds.length > 0) {
+      await executor.insert(offerCategories).values(
+        categoryIds.map((categoryId) => ({
+          offer_id: offerId,
+          category_id: categoryId,
+        })),
+      );
+    }
+  }
+
+  async findCategoryIds(offerId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ category_id: offerCategories.category_id })
+      .from(offerCategories)
+      .where(eq(offerCategories.offer_id, offerId));
+    return rows.map((r) => r.category_id);
+  }
+
   private baseSelect() {
     return this.db
       .select({
@@ -128,7 +158,6 @@ export class OffersRepository {
         title: offers.title,
         description: offers.description,
         image: offers.image,
-        category: offers.category,
         original_price: offers.original_price,
         discounted_price: offers.discounted_price,
         discount_percentage: offers.discount_percentage,
@@ -152,13 +181,21 @@ export class OffersRepository {
         location_latitude: businessLocations.latitude,
         location_longitude: businessLocations.longitude,
         location_zone: businessLocations.zone,
+        category_ids: sql<string[]>`COALESCE(array_agg(DISTINCT ${offerCategories.category_id}) FILTER (WHERE ${offerCategories.category_id} IS NOT NULL), '{}'::uuid[])`,
+        category_names: sql<string[]>`COALESCE(array_agg(DISTINCT ${categories.name}) FILTER (WHERE ${categories.name} IS NOT NULL), '{}'::text[])`,
+        category_slugs: sql<string[]>`COALESCE(array_agg(DISTINCT ${categories.slug}) FILTER (WHERE ${categories.slug} IS NOT NULL), '{}'::text[])`,
       })
       .from(offers)
       .innerJoin(businesses, eq(offers.business_id, businesses.id))
       .innerJoin(
         businessLocations,
         eq(offers.business_location_id, businessLocations.id),
-      );
+      )
+      .leftJoin(
+        offerCategories,
+        eq(offerCategories.offer_id, offers.id),
+      )
+      .leftJoin(categories, eq(categories.id, offerCategories.category_id));
   }
 
   private buildFilters(query: ListOffersQuery): SQL[] {
@@ -171,8 +208,10 @@ export class OffersRepository {
       filters.push(gt(offers.pickup_end, sql`now()`));
     }
 
-    if (query.category) {
-      filters.push(eq(offers.category, query.category));
+    if (query.category_id) {
+      filters.push(
+        sql`${offers.id} IN (SELECT ${offerCategories.offer_id} FROM ${offerCategories} WHERE ${offerCategories.category_id} = ${query.category_id})`,
+      );
     }
     if (query.business_id) {
       filters.push(eq(offers.business_id, query.business_id));
@@ -183,7 +222,6 @@ export class OffersRepository {
       query.lng !== undefined &&
       query.radius_km !== undefined
     ) {
-      // Haversine distance in km (lat/lng stored as numeric).
       filters.push(
         sql`(
           6371 * acos(
@@ -210,9 +248,42 @@ export class OffersRepository {
     const where = filters.length ? and(...filters) : undefined;
     const offset = (query.page - 1) * query.limit;
 
+    const groupBy = [
+      offers.id,
+      offers.business_id,
+      offers.business_location_id,
+      offers.title,
+      offers.description,
+      offers.image,
+      offers.original_price,
+      offers.discounted_price,
+      offers.discount_percentage,
+      offers.stock,
+      offers.initial_stock,
+      offers.pickup_start,
+      offers.pickup_end,
+      offers.is_active,
+      offers.includes,
+      offers.allergens,
+      offers.rating,
+      offers.review_count,
+      offers.created_at,
+      offers.updated_at,
+      businesses.name,
+      businesses.slug,
+      businesses.image,
+      businesses.rating,
+      businessLocations.name,
+      businessLocations.address,
+      businessLocations.latitude,
+      businessLocations.longitude,
+      businessLocations.zone,
+    ];
+
     const [items, totalRow] = await Promise.all([
       this.baseSelect()
         .where(where)
+        .groupBy(...groupBy)
         .orderBy(desc(offers.pickup_end))
         .limit(query.limit)
         .offset(offset),
@@ -224,6 +295,10 @@ export class OffersRepository {
           businessLocations,
           eq(offers.business_location_id, businessLocations.id),
         )
+        .leftJoin(
+          offerCategories,
+          eq(offerCategories.offer_id, offers.id),
+        )
         .where(where)
         .then((rows) => rows[0]?.value ?? 0),
     ]);
@@ -232,8 +307,41 @@ export class OffersRepository {
   }
 
   async findById(id: string): Promise<OfferListRow | null> {
+    const groupBy = [
+      offers.id,
+      offers.business_id,
+      offers.business_location_id,
+      offers.title,
+      offers.description,
+      offers.image,
+      offers.original_price,
+      offers.discounted_price,
+      offers.discount_percentage,
+      offers.stock,
+      offers.initial_stock,
+      offers.pickup_start,
+      offers.pickup_end,
+      offers.is_active,
+      offers.includes,
+      offers.allergens,
+      offers.rating,
+      offers.review_count,
+      offers.created_at,
+      offers.updated_at,
+      businesses.name,
+      businesses.slug,
+      businesses.image,
+      businesses.rating,
+      businessLocations.name,
+      businessLocations.address,
+      businessLocations.latitude,
+      businessLocations.longitude,
+      businessLocations.zone,
+    ];
+
     const [row] = await this.baseSelect()
       .where(eq(offers.id, id))
+      .groupBy(...groupBy)
       .limit(1);
     return (row as OfferListRow | undefined) ?? null;
   }

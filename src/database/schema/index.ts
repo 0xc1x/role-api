@@ -3,12 +3,14 @@ export * from './profiles';
 export * from './businesses';
 export * from './business-locations';
 export * from './offers';
+export * from './offer-categories';
 export * from './orders';
 export * from './categories';
 export * from './slides';
 
 import { businessLocations } from './business-locations';
 import { businesses } from './businesses';
+import { offerCategories } from './offer-categories';
 import { offers } from './offers';
 import { orderEvents, orders } from './orders';
 import { profiles } from './profiles';
@@ -22,6 +24,7 @@ export const schema = {
   businesses,
   businessLocations,
   offers,
+  offerCategories,
   orders,
   orderEvents,
   categories,

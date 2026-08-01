@@ -67,8 +67,7 @@ export class SlideMapper {
             badge_text: dto.badge_text ?? null,
             cta_label: dto.cta_label ?? null,
             redirect_url: dto.redirect_url ?? null,
-            image_url: dto.image_url,
-
+            image_url: dto.image_url ?? '',
             text_color: dto.text_color ?? null,
             button_color: dto.button_color ?? null,
 
@@ -95,7 +94,7 @@ export class SlideMapper {
         if (dto.badge_text !== undefined) update.badge_text = dto.badge_text;
         if (dto.cta_label !== undefined) update.cta_label = dto.cta_label;
         if (dto.redirect_url !== undefined) update.redirect_url = dto.redirect_url;
-        if (dto.image_url !== undefined) update.image_url = dto.image_url;
+        if (dto.image_url !== undefined) update.image_url = dto.image_url ?? '';
         if (dto.text_color !== undefined) update.text_color = dto.text_color;
         if (dto.button_color !== undefined) update.button_color = dto.button_color;
         if (dto.type !== undefined) update.type = dto.type;
