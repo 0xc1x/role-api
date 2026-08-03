@@ -7,6 +7,13 @@ jest.mock('@0xc1x/role-commons', () => ({
 import { Test } from '@nestjs/testing';
 import { OffersController } from './offers.controller';
 import { OffersService } from './offers.service';
+import type { AuthUser } from '../../auth/auth.types';
+
+const mockUser: AuthUser = {
+  id: 'user-1',
+  email: 'test@test.com',
+  role: 'business',
+};
 
 describe('OffersController', () => {
   let controller: OffersController;
@@ -117,10 +124,10 @@ describe('OffersController', () => {
       };
       service.create.mockResolvedValue(created);
 
-      const result = await controller.create(body);
+      const result = await controller.create(mockUser, body);
 
       expect(result).toEqual(created);
-      expect(service.create).toHaveBeenCalledWith(body);
+      expect(service.create).toHaveBeenCalledWith(mockUser, body);
     });
   });
 
@@ -139,10 +146,10 @@ describe('OffersController', () => {
       };
       service.update.mockResolvedValue(updated);
 
-      const result = await controller.update('o1', body);
+      const result = await controller.update(mockUser, 'o1', body);
 
       expect(result).toEqual(updated);
-      expect(service.update).toHaveBeenCalledWith('o1', body);
+      expect(service.update).toHaveBeenCalledWith(mockUser, 'o1', body);
     });
   });
 
@@ -150,9 +157,9 @@ describe('OffersController', () => {
     it('should deactivate an offer', async () => {
       service.remove.mockResolvedValue(undefined);
 
-      await controller.remove('o1');
+      await controller.remove(mockUser, 'o1');
 
-      expect(service.remove).toHaveBeenCalledWith('o1');
+      expect(service.remove).toHaveBeenCalledWith(mockUser, 'o1');
     });
   });
 });

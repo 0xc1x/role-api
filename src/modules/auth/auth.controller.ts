@@ -17,8 +17,14 @@ import {
   LoginRequestSchema,
   RegisterRequestSchema,
   RefreshRequestSchema,
+  LogoutRequestSchema,
 } from '@0xc1x/role-commons';
-import type { LoginRequest, RegisterRequest, RefreshRequest } from '@0xc1x/role-commons';
+import type {
+  LoginRequest,
+  RegisterRequest,
+  RefreshRequest,
+  LogoutRequest,
+} from '@0xc1x/role-commons';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -68,5 +74,16 @@ export class AuthController {
   @ApiOkResponse({ description: 'The authenticated user profile' })
   getProfile(@CurrentUser() user: AuthUser) {
     return { user };
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Log out (revoke refresh token globally)' })
+  @ApiOkResponse({ description: 'Logged out successfully' })
+  logout(
+    @Body(new ZodValidationPipe(LogoutRequestSchema))
+    body: LogoutRequest,
+  ) {
+    return this.authService.logout(body);
   }
 }

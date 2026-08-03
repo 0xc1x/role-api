@@ -1,12 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   and,
-  count,
+  countDistinct,
   desc,
   eq,
   gte,
   gt,
   inArray,
+  isNull,
+  lte,
   sql,
   type SQL,
 } from 'drizzle-orm';
@@ -18,6 +20,7 @@ import {
   categories,
   offerCategories,
   offers,
+  orders,
 } from '../../database/schema';
 import type { ListOffersQuery } from '@0xc1x/role-commons';
 
@@ -280,6 +283,8 @@ export class OffersRepository {
       businessLocations.zone,
     ];
 
+    // Count without category joins so multi-category offers are not inflated.
+    // category_id filter is applied via subquery in buildFilters.
     const [items, totalRow] = await Promise.all([
       this.baseSelect()
         .where(where)
@@ -288,16 +293,12 @@ export class OffersRepository {
         .limit(query.limit)
         .offset(offset),
       this.db
-        .select({ value: count() })
+        .select({ value: countDistinct(offers.id) })
         .from(offers)
         .innerJoin(businesses, eq(offers.business_id, businesses.id))
         .innerJoin(
           businessLocations,
           eq(offers.business_location_id, businessLocations.id),
-        )
-        .leftJoin(
-          offerCategories,
-          eq(offerCategories.offer_id, offers.id),
         )
         .where(where)
         .then((rows) => rows[0]?.value ?? 0),
@@ -369,5 +370,96 @@ export class OffersRepository {
       .where(and(eq(offers.id, id), gte(offers.stock, amount)))
       .returning({ id: offers.id });
     return result.length > 0;
+  }
+
+  async incrementStock(tx: Database, id: string, amount = 1): Promise<boolean> {
+    const result = await tx
+      .update(offers)
+      .set({
+        stock: sql`${offers.stock} + ${amount}`,
+        updated_at: sql`now()`,
+      })
+      .where(eq(offers.id, id))
+      .returning({ id: offers.id });
+    return result.length > 0;
+  }
+
+  async isBusinessOwner(businessId: string, userId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: businesses.id })
+      .from(businesses)
+      .where(and(eq(businesses.id, businessId), eq(businesses.owner_id, userId)))
+      .limit(1);
+    return Boolean(row);
+  }
+
+  async findBusinessIdsOwnedBy(userId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ id: businesses.id })
+      .from(businesses)
+      .where(eq(businesses.owner_id, userId));
+    return rows.map((r) => r.id);
+  }
+
+  /** Ensure location belongs to the given business. */
+  async locationBelongsToBusiness(
+    locationId: string,
+    businessId: string,
+    executor: DbExecutor = this.db,
+  ): Promise<boolean> {
+    const [row] = await executor
+      .select({ id: businessLocations.id })
+      .from(businessLocations)
+      .where(
+        and(
+          eq(businessLocations.id, locationId),
+          eq(businessLocations.business_id, businessId),
+        ),
+      )
+      .limit(1);
+    return Boolean(row);
+  }
+
+  /**
+   * Return active category ids that exist among the requested set.
+   * Missing or inactive ids are omitted from the result.
+   */
+  async findActiveCategoryIds(
+    categoryIds: string[],
+    executor: DbExecutor = this.db,
+  ): Promise<string[]> {
+    if (categoryIds.length === 0) return [];
+    const rows = await executor
+      .select({ id: categories.id })
+      .from(categories)
+      .where(
+        and(
+          inArray(categories.id, categoryIds),
+          eq(categories.active, true),
+          isNull(categories.deleted_at),
+        ),
+      );
+    return rows.map((r) => r.id);
+  }
+
+  /**
+   * Orders in pending/ready_for_pickup whose offer pickup_end has passed.
+   * Recommended DB indexes (Supabase): offers(is_active, pickup_end), offers(business_id),
+   * orders(status, offer_id), orders(user_id, offer_id, status).
+   */
+  async findOrderCandidatesToExpire(
+    now: Date,
+  ): Promise<Array<{ orderId: string }>> {
+    const rows = await this.db
+      .select({ orderId: orders.id })
+      .from(orders)
+      .innerJoin(offers, eq(orders.offer_id, offers.id))
+      .where(
+        and(
+          inArray(orders.status, ['pending', 'ready_for_pickup']),
+          lte(offers.pickup_end, now),
+        ),
+      );
+    return rows;
   }
 }

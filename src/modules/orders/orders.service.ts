@@ -12,14 +12,21 @@ import type { AuthUser } from '../../auth/auth.types';
 import { OffersRepository } from '../offers/offers.repository';
 import {
   canActorTransition,
+  canViewPickupCode,
   isTransitionAllowed,
+  shouldRestockOnTransition,
+  type OrderEventSource,
 } from './order-status.machine';
 import { OrdersRepository } from './orders.repository';
 import type {
   CreateOrderRequest,
+  ListBusinessOrdersQuery,
   ListOrdersQuery,
   UpdateOrderStatusRequest,
 } from '@0xc1x/role-commons';
+import type { orders as ordersTable } from '../../database/schema';
+
+type OrderRow = typeof ordersTable.$inferSelect;
 
 @Injectable()
 export class OrdersService {
@@ -34,6 +41,17 @@ export class OrdersService {
 
     const created = await this.ordersRepository.dbClient.transaction(
       async (tx) => {
+        const existing = await this.ordersRepository.findActiveByUserAndOffer(
+          tx,
+          user.id,
+          body.offer_id,
+        );
+        if (existing) {
+          throw new ConflictException(
+            'You already have an active order for this offer',
+          );
+        }
+
         const offer = await this.offersRepository.findByIdForUpdate(
           tx,
           body.offer_id,
@@ -84,14 +102,18 @@ export class OrdersService {
           previous_status: null,
           changed_by: user.id,
           reason: 'Order created',
-          metadata: { source: 'api' },
+          metadata: { source: 'api' satisfies OrderEventSource },
         });
 
         return order;
       },
     );
 
-    return this.toResponse(created);
+    return this.toResponse(created, {
+      isOrderOwner: true,
+      isBusinessOwner: false,
+      isAdmin: user.role === 'admin',
+    });
   }
 
   async listMine(user: AuthUser, query: ListOrdersQuery) {
@@ -101,7 +123,75 @@ export class OrdersService {
       limit: query.limit,
     });
     return {
-      data: items.map((row) => this.toResponse(row)),
+      data: items.map((row) =>
+        this.toResponse(row, {
+          isOrderOwner: true,
+          isBusinessOwner: false,
+          isAdmin: user.role === 'admin',
+        }),
+      ),
+      meta: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        total_pages: Math.ceil(total / query.limit) || 0,
+      },
+    };
+  }
+
+  async listForBusiness(user: AuthUser, query: ListBusinessOrdersQuery) {
+    let businessId = query.business_id;
+
+    if (!businessId) {
+      // Default to first owned business when not specified.
+      const owned = await this.offersRepository.findBusinessIdsOwnedBy(user.id);
+      if (owned.length === 0 && user.role !== 'admin') {
+        throw new ForbiddenException('You do not own any business');
+      }
+      if (owned.length === 0) {
+        return {
+          data: [],
+          meta: {
+            page: query.page,
+            limit: query.limit,
+            total: 0,
+            total_pages: 0,
+          },
+        };
+      }
+      if (owned.length > 1 && user.role !== 'admin') {
+        throw new UnprocessableEntityException(
+          'business_id is required when you own multiple businesses',
+        );
+      }
+      businessId = owned[0];
+    } else if (user.role !== 'admin') {
+      const isOwner = await this.ordersRepository.isBusinessOwner(
+        businessId,
+        user.id,
+      );
+      if (!isOwner) {
+        throw new ForbiddenException('You do not own this business');
+      }
+    }
+
+    const { items, total } = await this.ordersRepository.listForBusiness(
+      businessId,
+      {
+        status: query.status,
+        page: query.page,
+        limit: query.limit,
+      },
+    );
+
+    return {
+      data: items.map((row) =>
+        this.toResponse(row, {
+          isOrderOwner: row.user_id === user.id,
+          isBusinessOwner: true,
+          isAdmin: user.role === 'admin',
+        }),
+      ),
       meta: {
         page: query.page,
         limit: query.limit,
@@ -123,7 +213,11 @@ export class OrdersService {
       throw new ForbiddenException('You cannot access this order');
     }
 
-    return this.toResponse(row.order);
+    return this.toResponse(row.order, {
+      isOrderOwner: isOwner,
+      isBusinessOwner,
+      isAdmin: user.role === 'admin',
+    });
   }
 
   async updateStatus(
@@ -131,60 +225,164 @@ export class OrdersService {
     id: string,
     body: UpdateOrderStatusRequest,
   ) {
-    const row = await this.ordersRepository.findByIdWithBusinessOwner(id);
-    if (!row) {
-      throw new NotFoundException(`Order ${id} not found`);
-    }
-
-    const current = row.order.status as OrderStatus;
-    const next = body.status;
-
-    if (current === next) {
-      return this.toResponse(row.order);
-    }
-
-    if (!isTransitionAllowed(current, next)) {
-      throw new UnprocessableEntityException(
-        `Cannot transition order from '${current}' to '${next}'`,
-      );
-    }
-
-    const isOrderOwner = row.order.user_id === user.id;
-    const isBusinessOwner = row.business_owner_id === user.id;
-
-    if (
-      !canActorTransition(user.role, current, next, {
-        isOrderOwner,
-        isBusinessOwner,
-      })
-    ) {
-      throw new ForbiddenException(
-        `Role '${user.role}' cannot transition order to '${next}'`,
-      );
-    }
-
     const updated = await this.ordersRepository.dbClient.transaction(
       async (tx) => {
-        const order = await this.ordersRepository.updateStatus(tx, id, next);
-        if (!order) {
+        const locked = await this.ordersRepository.findByIdForUpdate(tx, id);
+        if (!locked) {
           throw new NotFoundException(`Order ${id} not found`);
         }
+
+        const current = locked.order.status as OrderStatus;
+        const next = body.status;
+
+        if (current === next) {
+          return locked.order;
+        }
+
+        if (!isTransitionAllowed(current, next)) {
+          throw new UnprocessableEntityException(
+            `Cannot transition order from '${current}' to '${next}'`,
+          );
+        }
+
+        const isOrderOwner = locked.order.user_id === user.id;
+        const isBusinessOwner = locked.business_owner_id === user.id;
+
+        if (
+          !canActorTransition(user.role, current, next, {
+            isOrderOwner,
+            isBusinessOwner,
+          })
+        ) {
+          throw new ForbiddenException(
+            `Role '${user.role}' cannot transition order to '${next}'`,
+          );
+        }
+
+        const order = await this.ordersRepository.updateStatus(
+          tx,
+          id,
+          next,
+          current,
+        );
+        if (!order) {
+          throw new ConflictException(
+            'Order status changed concurrently; retry the request',
+          );
+        }
+
+        if (shouldRestockOnTransition(current, next)) {
+          await this.offersRepository.incrementStock(
+            tx,
+            locked.order.offer_id,
+            1,
+          );
+        }
+
+        const source: OrderEventSource =
+          user.role === 'admin' ? 'admin' : 'api';
+
         await this.ordersRepository.insertEvent(tx, {
           order_id: id,
           status: next,
           previous_status: current,
           changed_by: user.id,
           reason: body.reason ?? null,
-          metadata: { source: 'api' },
+          metadata: { source },
         });
+
         return order;
       },
     );
 
-    return this.toResponse(updated);
+    const isOrderOwner = updated.user_id === user.id;
+    const isBusinessOwner = await this.ordersRepository.isBusinessOwner(
+      updated.business_id,
+      user.id,
+    );
+
+    return this.toResponse(updated, {
+      isOrderOwner,
+      isBusinessOwner,
+      isAdmin: user.role === 'admin',
+    });
   }
 
-  private toResponse(row: typeof import('../../database/schema').orders.$inferSelect) {
+  /**
+   * System job: expire pending/ready_for_pickup orders whose offer pickup_end has passed.
+   * Restores stock in the same transaction per order.
+   */
+  async expireStaleOrders(): Promise<{ expired: number }> {
+    const now = new Date();
+    const candidates =
+      await this.offersRepository.findOrderCandidatesToExpire(now);
+
+    let expired = 0;
+
+    for (const candidate of candidates) {
+      await this.ordersRepository.dbClient.transaction(async (tx) => {
+        const locked = await this.ordersRepository.findByIdForUpdate(
+          tx,
+          candidate.orderId,
+        );
+        if (!locked) return;
+
+        const current = locked.order.status as OrderStatus;
+        if (current !== 'pending' && current !== 'ready_for_pickup') {
+          return;
+        }
+        if (!isTransitionAllowed(current, 'expired')) {
+          return;
+        }
+
+        const order = await this.ordersRepository.updateStatus(
+          tx,
+          candidate.orderId,
+          'expired',
+          current,
+        );
+        if (!order) return;
+
+        if (shouldRestockOnTransition(current, 'expired')) {
+          await this.offersRepository.incrementStock(
+            tx,
+            locked.order.offer_id,
+            1,
+          );
+        }
+
+        await this.ordersRepository.insertEvent(tx, {
+          order_id: candidate.orderId,
+          status: 'expired',
+          previous_status: current,
+          changed_by: null,
+          reason: 'Pickup window ended',
+          metadata: { source: 'cron' satisfies OrderEventSource },
+        });
+
+        expired += 1;
+      });
+    }
+
+    return { expired };
+  }
+
+  private toResponse(
+    row: OrderRow,
+    viewer: {
+      isOrderOwner: boolean;
+      isBusinessOwner: boolean;
+      isAdmin: boolean;
+    },
+  ) {
+    const status = row.status as OrderStatus;
+    const showPickupCode = canViewPickupCode({
+      status,
+      isOrderOwner: viewer.isOrderOwner,
+      isBusinessOwner: viewer.isBusinessOwner,
+      isAdmin: viewer.isAdmin,
+    });
+
     return {
       id: row.id,
       user_id: row.user_id,
@@ -194,7 +392,7 @@ export class OrdersService {
       status: row.status,
       price: toNumber(row.price),
       original_price: toNumber(row.original_price),
-      pickup_code: row.pickup_code,
+      pickup_code: showPickupCode ? row.pickup_code : null,
       pickup_time: row.pickup_time ? row.pickup_time.toISOString() : null,
       coupon_id: row.coupon_id,
       created_at: row.created_at.toISOString(),

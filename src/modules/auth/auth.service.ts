@@ -13,7 +13,7 @@ import type { Env } from '../../config/env.schema';
 import { type Database } from '../../database/database.module';
 import { DRIZZLE } from '../../database/database.tokens';
 import { profiles } from '../../database/schema';
-import type { LoginRequest, RegisterRequest, RefreshRequest } from '@0xc1x/role-commons';
+import type { LoginRequest, RegisterRequest, RefreshRequest, LogoutRequest } from '@0xc1x/role-commons';
 
 @Injectable()
 export class AuthService {
@@ -201,5 +201,17 @@ export class AuthService {
             role: 'user' as const,
           },
     };
+  }
+
+  async logout(body: LogoutRequest): Promise<{ message: string }> {
+    const { error } = await this.supabaseAnon.auth.signOut({
+      scope: 'global',
+    });
+
+    if (error) {
+      throw new InternalServerErrorException(error.message);
+    }
+
+    return { message: 'Logged out successfully' };
   }
 }

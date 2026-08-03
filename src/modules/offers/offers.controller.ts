@@ -29,6 +29,8 @@ import type {
   OfferDto,
   UpdateOfferDto,
 } from '@0xc1x/role-commons';
+import type { AuthUser } from '../../auth/auth.types';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -59,38 +61,43 @@ export class OffersController {
   }
 
   @Post()
-  @Roles('admin')
+  @Roles('admin', 'business')
   @HttpCode(HttpStatus.CREATED)
   @ApiBearerAuth('bearer')
-  @ApiOperation({ summary: 'Create an offer (admin)' })
+  @ApiOperation({ summary: 'Create an offer (admin or business owner)' })
   @ApiCreatedResponse({ description: 'Offer created' })
   create(
+    @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(CreateOfferSchema))
     body: CreateOfferDto,
   ): Promise<OfferDto> {
-    return this.offersService.create(body);
+    return this.offersService.create(user, body);
   }
 
   @Patch(':id')
-  @Roles('admin')
+  @Roles('admin', 'business')
   @ApiBearerAuth('bearer')
-  @ApiOperation({ summary: 'Update an offer (admin)' })
+  @ApiOperation({ summary: 'Update an offer (admin or business owner)' })
   @ApiOkResponse({ description: 'Offer updated' })
   update(
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(UpdateOfferSchema))
     body: UpdateOfferDto,
   ): Promise<OfferDto> {
-    return this.offersService.update(id, body);
+    return this.offersService.update(user, id, body);
   }
 
   @Delete(':id')
-  @Roles('admin')
+  @Roles('admin', 'business')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('bearer')
-  @ApiOperation({ summary: 'Deactivate an offer (admin)' })
+  @ApiOperation({ summary: 'Deactivate an offer (admin or business owner)' })
   @ApiOkResponse({ description: 'Offer deactivated' })
-  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.offersService.remove(id);
+  remove(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    return this.offersService.remove(user, id);
   }
 }

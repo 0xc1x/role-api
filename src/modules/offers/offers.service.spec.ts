@@ -82,6 +82,9 @@ describe('OffersService', () => {
             update: jest.fn(),
             setCategories: jest.fn(),
             findCategoryIds: jest.fn(),
+            isBusinessOwner: jest.fn(),
+            locationBelongsToBusiness: jest.fn(),
+            findActiveCategoryIds: jest.fn(),
           },
         },
       ],
@@ -168,6 +171,7 @@ describe('OffersService', () => {
 
   describe('create', () => {
     it('should create and return an offer', async () => {
+      const mockUser = { id: 'user-1', email: 'test@test.com', role: 'business' as const };
       const body = {
         business_id: 'b1',
         business_location_id: 'bl1',
@@ -178,13 +182,16 @@ describe('OffersService', () => {
         pickup_end: '2025-02-01T12:00:00Z',
         category_ids: ['c1'],
       };
+      repository.isBusinessOwner.mockResolvedValue(true);
+      repository.locationBelongsToBusiness.mockResolvedValue(true);
+      repository.findActiveCategoryIds.mockResolvedValue(['c1']);
       repository.transaction.mockImplementation(async (fn) =>
         fn({} as unknown as DbExecutor),
       );
       repository.insert.mockResolvedValue(makeOfferRow({ title: 'New Offer' }));
       repository.findCategoryIds.mockResolvedValue(['c1']);
 
-      const result = await service.create(body);
+      const result = await service.create(mockUser, body);
 
       expect(repository.insert).toHaveBeenCalledWith(
         expect.anything(),
@@ -205,15 +212,19 @@ describe('OffersService', () => {
 
   describe('update', () => {
     it('should update and return the offer', async () => {
+      const mockUser = { id: 'user-1', email: 'test@test.com', role: 'business' as const };
       const existing = makeOfferRow();
       repository.findDtoById.mockResolvedValue(existing);
+      repository.isBusinessOwner.mockResolvedValue(true);
+      repository.locationBelongsToBusiness.mockResolvedValue(true);
+      repository.findActiveCategoryIds.mockResolvedValue([]);
       repository.transaction.mockImplementation(async (fn) =>
         fn({} as unknown as DbExecutor),
       );
       repository.update.mockResolvedValue({ ...existing, title: 'Updated Offer' });
       repository.findCategoryIds.mockResolvedValue([]);
 
-      const result = await service.update('o1', { title: 'Updated Offer' });
+      const result = await service.update(mockUser, 'o1', { title: 'Updated Offer' });
 
       expect(repository.update).toHaveBeenCalledWith(
         expect.anything(),
@@ -224,23 +235,28 @@ describe('OffersService', () => {
     });
 
     it('should throw NotFoundException when offer not found', async () => {
+      const mockUser = { id: 'user-1', email: 'test@test.com', role: 'business' as const };
       repository.findDtoById.mockResolvedValue(null);
 
       await expect(
-        service.update('nonexistent', { title: 'Updated' }),
+        service.update(mockUser, 'nonexistent', { title: 'Updated' }),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('should update categories when provided', async () => {
+      const mockUser = { id: 'user-1', email: 'test@test.com', role: 'business' as const };
       const existing = makeOfferRow();
       repository.findDtoById.mockResolvedValue(existing);
+      repository.isBusinessOwner.mockResolvedValue(true);
+      repository.locationBelongsToBusiness.mockResolvedValue(true);
+      repository.findActiveCategoryIds.mockResolvedValue(['c1', 'c2']);
       repository.transaction.mockImplementation(async (fn) =>
         fn({} as unknown as DbExecutor),
       );
       repository.update.mockResolvedValue(existing);
       repository.findCategoryIds.mockResolvedValue(['c1', 'c2']);
 
-      await service.update('o1', { category_ids: ['c1', 'c2'] });
+      await service.update(mockUser, 'o1', { category_ids: ['c1', 'c2'] });
 
       expect(repository.setCategories).toHaveBeenCalledWith(
         expect.anything(),
@@ -252,12 +268,16 @@ describe('OffersService', () => {
 
   describe('remove', () => {
     it('should deactivate the offer', async () => {
+      const mockUser = { id: 'user-1', email: 'test@test.com', role: 'business' as const };
+      const existing = makeOfferRow();
+      repository.findDtoById.mockResolvedValue(existing);
+      repository.isBusinessOwner.mockResolvedValue(true);
       repository.transaction.mockImplementation(async (fn) =>
         fn({} as unknown as DbExecutor),
       );
       repository.update.mockResolvedValue(makeOfferRow({ is_active: false }));
 
-      await service.remove('o1');
+      await service.remove(mockUser, 'o1');
 
       expect(repository.update).toHaveBeenCalledWith(
         expect.anything(),
@@ -267,12 +287,14 @@ describe('OffersService', () => {
     });
 
     it('should throw NotFoundException when offer not found', async () => {
+      const mockUser = { id: 'user-1', email: 'test@test.com', role: 'business' as const };
+      repository.findDtoById.mockResolvedValue(null);
       repository.transaction.mockImplementation(async (fn) =>
         fn({} as unknown as DbExecutor),
       );
       repository.update.mockResolvedValue(null);
 
-      await expect(service.remove('nonexistent')).rejects.toThrow(NotFoundException);
+      await expect(service.remove(mockUser, 'nonexistent')).rejects.toThrow(NotFoundException);
     });
   });
 });

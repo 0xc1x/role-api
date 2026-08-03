@@ -17,16 +17,19 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import type { AuthUser } from '../../auth/auth.types';
 import { OrdersService } from './orders.service';
 import {
   CreateOrderRequestSchema,
+  ListBusinessOrdersQuerySchema,
   ListOrdersQuerySchema,
   UpdateOrderStatusSchema,
 } from '@0xc1x/role-commons';
 import type {
   CreateOrderRequest,
+  ListBusinessOrdersQuery,
   ListOrdersQuery,
   UpdateOrderStatusRequest,
 } from '@0xc1x/role-commons';
@@ -50,7 +53,7 @@ export class OrdersController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List my orders' })
+  @ApiOperation({ summary: 'List my orders (consumer)' })
   @ApiOkResponse({ description: 'Paginated orders' })
   listMine(
     @CurrentUser() user: AuthUser,
@@ -58,6 +61,18 @@ export class OrdersController {
     query: ListOrdersQuery,
   ) {
     return this.ordersService.listMine(user, query);
+  }
+
+  @Get('business')
+  @Roles('business', 'admin')
+  @ApiOperation({ summary: 'List orders for a business I own' })
+  @ApiOkResponse({ description: 'Paginated business orders' })
+  listForBusiness(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListBusinessOrdersQuerySchema))
+    query: ListBusinessOrdersQuery,
+  ) {
+    return this.ordersService.listForBusiness(user, query);
   }
 
   @Get(':id')

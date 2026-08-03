@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
@@ -12,6 +13,7 @@ import { OffersModule } from './modules/offers/offers.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { SlidesModule } from './modules/slides/slides.module';
+import { BusinessesModule } from './modules/businesses/businesses.module';
 
 @Module({
   imports: [
@@ -20,6 +22,7 @@ import { SlidesModule } from './modules/slides/slides.module';
       cache: true,
       validate: validateEnv,
     }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
@@ -50,6 +53,7 @@ import { SlidesModule } from './modules/slides/slides.module';
     OrdersModule,
     UploadModule,
     SlidesModule,
+    BusinessesModule,
   ],
   providers: [
     {
