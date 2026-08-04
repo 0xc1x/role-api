@@ -87,9 +87,7 @@ describe('OrdersService', () => {
         {
           provide: OrdersRepository,
           useValue: {
-            dbClient: {
-              transaction: jest.fn(),
-            },
+            transaction: jest.fn(),
             findActiveByUserAndOffer: jest.fn(),
             findByIdWithBusinessOwner: jest.fn(),
             findByIdForUpdate: jest.fn(),
@@ -121,7 +119,7 @@ describe('OrdersService', () => {
 
     jest.resetAllMocks();
 
-    (ordersRepository.dbClient.transaction as jest.Mock).mockImplementation(
+    (ordersRepository.transaction as jest.Mock).mockImplementation(
       async (fn: (tx: any) => Promise<any>) => fn({}),
     );
   });

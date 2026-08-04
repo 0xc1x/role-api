@@ -6,16 +6,21 @@ import { DRIZZLE } from '../../database/database.tokens';
 import { businesses, orderEvents, orders } from '../../database/schema';
 import { ACTIVE_ORDER_STATUSES } from './order-status.machine';
 
+export type DbExecutor = Database;
+
 @Injectable()
 export class OrdersRepository {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
-  get dbClient(): Database {
-    return this.db;
+  /**
+   * Run work inside a transaction. Prefer this over exposing the raw client.
+   */
+  transaction<T>(fn: (tx: DbExecutor) => Promise<T>): Promise<T> {
+    return this.db.transaction(fn);
   }
 
   async insertOrder(
-    tx: Database,
+    tx: DbExecutor,
     values: typeof orders.$inferInsert,
   ): Promise<typeof orders.$inferSelect> {
     const [row] = await tx.insert(orders).values(values).returning();
@@ -24,7 +29,7 @@ export class OrdersRepository {
   }
 
   async insertEvent(
-    tx: Database,
+    tx: DbExecutor,
     values: typeof orderEvents.$inferInsert,
   ): Promise<void> {
     await tx.insert(orderEvents).values(values);
@@ -54,7 +59,7 @@ export class OrdersRepository {
 
   /** Lock the order row inside an open transaction (SELECT … FOR UPDATE). */
   async findByIdForUpdate(
-    tx: Database,
+    tx: DbExecutor,
     id: string,
   ): Promise<{
     order: typeof orders.$inferSelect;
@@ -128,7 +133,7 @@ export class OrdersRepository {
   }
 
   async updateStatus(
-    tx: Database,
+    tx: DbExecutor,
     id: string,
     status: OrderStatus,
     expectedCurrent?: OrderStatus,
@@ -159,7 +164,7 @@ export class OrdersRepository {
    * Enforces max 1 active order per offer/user.
    */
   async findActiveByUserAndOffer(
-    tx: Database,
+    tx: DbExecutor,
     userId: string,
     offerId: string,
   ): Promise<typeof orders.$inferSelect | null> {
@@ -182,7 +187,7 @@ export class OrdersRepository {
    * Joined against offers via offer_id; caller filters by pickup_end.
    */
   async listExpirableIds(
-    tx: Database,
+    tx: DbExecutor,
     offerIdsWithEndedPickup: string[],
   ): Promise<Array<typeof orders.$inferSelect>> {
     if (offerIdsWithEndedPickup.length === 0) return [];

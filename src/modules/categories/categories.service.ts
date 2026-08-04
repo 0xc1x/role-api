@@ -14,10 +14,9 @@ import {
 } from '@0xc1x/role-commons';
 import {
   CategoriesRepository,
-  type CategoryRow,
-  type CategoryUpdate,
   type DbExecutor,
 } from './categories.repository';
+import { CategoryMapper } from './categories.mapper';
 
 @Injectable()
 export class CategoriesService {
@@ -32,7 +31,7 @@ export class CategoriesService {
     });
 
     return paginatedDataFromQuery(
-      rows.map((row) => this.toDto(row)),
+      rows.map((row) => CategoryMapper.toDto(row)),
       { page: query.page, limit: query.limit },
       total,
     );
@@ -43,7 +42,7 @@ export class CategoriesService {
     if (!row) {
       throw new NotFoundException(`Category ${id} not found`);
     }
-    return this.toDto(row);
+    return CategoryMapper.toDto(row);
   }
 
   async create(body: CreateCategoryDto): Promise<CategoryDto> {
@@ -58,17 +57,13 @@ export class CategoriesService {
       await this.assertNameAvailable(body.name, undefined, tx);
       await this.assertSlugAvailable(slug, undefined, tx);
 
-      return this.categoriesRepository.insert(tx, {
-        name: body.name,
-        description: body.description ?? null,
-        emoji: body.emoji ?? null,
-        slug,
-        image_url: body.image_url ?? null,
-        active: body.active ?? true,
-      });
+      return this.categoriesRepository.insert(
+        tx,
+        CategoryMapper.toInsert(body, slug),
+      );
     });
 
-    return this.toDto(created);
+    return CategoryMapper.toDto(created);
   }
 
   async update(id: string, body: UpdateCategoryDto): Promise<CategoryDto> {
@@ -84,13 +79,7 @@ export class CategoriesService {
       await this.assertSlugAvailable(body.slug, id);
     }
 
-    const patch: CategoryUpdate = {};
-    if (body.name !== undefined) patch.name = body.name;
-    if (body.description !== undefined) patch.description = body.description;
-    if (body.emoji !== undefined) patch.emoji = body.emoji;
-    if (body.slug !== undefined) patch.slug = body.slug;
-    if (body.image_url !== undefined) patch.image_url = body.image_url;
-    if (body.active !== undefined) patch.active = body.active;
+    const patch = CategoryMapper.toUpdate(body);
 
     const updated = await this.categoriesRepository.transaction(async (tx) => {
       const row = await this.categoriesRepository.update(tx, id, patch);
@@ -100,7 +89,7 @@ export class CategoriesService {
       return row;
     });
 
-    return this.toDto(updated);
+    return CategoryMapper.toDto(updated);
   }
 
   async remove(id: string): Promise<CategoryDto> {
@@ -112,28 +101,7 @@ export class CategoriesService {
       return row;
     });
 
-    return this.toDto(deleted);
-  }
-
-  // ─── mapping ──────────────────────────────────────────────────────────────
-
-  /**
-   * Maps a DB row (Date) → wire DTO (ISO strings).
-   * Single place that crosses the persistence / API boundary.
-   */
-  private toDto(row: CategoryRow): CategoryDto {
-    return {
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      emoji: row.emoji,
-      slug: row.slug,
-      image_url: row.image_url,
-      active: row.active,
-      created_at: row.created_at?.toISOString() ?? new Date().toISOString(),
-      updated_at: row.updated_at?.toISOString() ?? new Date().toISOString(),
-      deleted_at: row.deleted_at ? row.deleted_at.toISOString() : null,
-    };
+    return CategoryMapper.toDto(deleted);
   }
 
   private slugify(name: string): string {

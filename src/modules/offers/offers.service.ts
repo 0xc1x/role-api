@@ -4,84 +4,40 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { toNumber, toNumberOrNull } from '../../common/utils/numeric';
-import type { AuthUser } from '../../auth/auth.types';
-import type { OfferListRow, OfferRow, OfferUpdate } from './offers.repository';
-import { OffersRepository } from './offers.repository';
-import type {
-  CreateOfferDto,
-  ListOffersQuery,
-  OfferDto,
-  UpdateOfferDto,
+import {
+  paginatedDataFromQuery,
+  type CreateOfferDto,
+  type ListOffersQuery,
+  type OfferDto,
+  type OfferWithBusiness,
+  type PaginatedData,
+  type UpdateOfferDto,
 } from '@0xc1x/role-commons';
-
-export type OfferResponse = {
-  id: string;
-  business_id: string;
-  business_location_id: string;
-  title: string;
-  description: string | null;
-  image: string | null;
-  category_ids: string[];
-  categories: Array<{
-    id: string;
-    name: string;
-    slug: string;
-  }>;
-  original_price: number;
-  discounted_price: number;
-  discount_percentage: number | null;
-  stock: number;
-  initial_stock: number;
-  pickup_start: string;
-  pickup_end: string;
-  is_active: boolean;
-  includes: string | null;
-  allergens: string | null;
-  rating: number;
-  review_count: number;
-  created_at: string;
-  updated_at: string;
-  business: {
-    id: string;
-    name: string;
-    slug: string;
-    image: string | null;
-    rating: number | null;
-  };
-  location: {
-    id: string;
-    name: string;
-    address: string;
-    latitude: number;
-    longitude: number;
-    zone: string | null;
-  };
-};
+import { toNumber } from '../../common/utils/numeric';
+import type { AuthUser } from '../../auth/auth.types';
+import type { OfferUpdate } from './offers.repository';
+import { OffersRepository } from './offers.repository';
+import { OfferMapper } from './offers.mapper';
 
 @Injectable()
 export class OffersService {
   constructor(private readonly offersRepository: OffersRepository) {}
 
-  async list(query: ListOffersQuery) {
+  async list(query: ListOffersQuery): Promise<PaginatedData<OfferWithBusiness>> {
     const { items, total } = await this.offersRepository.findMany(query);
-    return {
-      data: items.map((row) => this.toResponse(row)),
-      meta: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        total_pages: Math.ceil(total / query.limit) || 0,
-      },
-    };
+    return paginatedDataFromQuery(
+      items.map((row) => OfferMapper.toResponse(row)),
+      { page: query.page, limit: query.limit },
+      total,
+    );
   }
 
-  async getById(id: string): Promise<OfferResponse> {
+  async getById(id: string): Promise<OfferWithBusiness> {
     const row = await this.offersRepository.findById(id);
     if (!row) {
       throw new NotFoundException(`Offer ${id} not found`);
     }
-    return this.toResponse(row);
+    return OfferMapper.toResponse(row);
   }
 
   async create(user: AuthUser, body: CreateOfferDto): Promise<OfferDto> {
@@ -126,7 +82,7 @@ export class OffersService {
     });
 
     const category_ids = await this.offersRepository.findCategoryIds(created.id);
-    return this.toOfferDto(created, category_ids);
+    return OfferMapper.toDto(created, category_ids);
   }
 
   async update(
@@ -201,7 +157,7 @@ export class OffersService {
     });
 
     const category_ids = await this.offersRepository.findCategoryIds(updated.id);
-    return this.toOfferDto(updated, category_ids);
+    return OfferMapper.toDto(updated, category_ids);
   }
 
   async remove(user: AuthUser, id: string): Promise<void> {
@@ -278,77 +234,5 @@ export class OffersService {
     if (new Date(pickupEnd).getTime() <= new Date(pickupStart).getTime()) {
       throw new BadRequestException('pickup_end must be after pickup_start');
     }
-  }
-
-  private toOfferDto(row: OfferRow, categoryIds: string[]): OfferDto {
-    return {
-      id: row.id,
-      business_id: row.business_id,
-      business_location_id: row.business_location_id,
-      title: row.title,
-      description: row.description,
-      image: row.image,
-      category_ids: categoryIds,
-      original_price: toNumber(row.original_price),
-      discounted_price: toNumber(row.discounted_price),
-      discount_percentage: toNumberOrNull(row.discount_percentage),
-      stock: row.stock,
-      initial_stock: row.initial_stock,
-      pickup_start: row.pickup_start.toISOString(),
-      pickup_end: row.pickup_end.toISOString(),
-      is_active: row.is_active,
-      includes: row.includes,
-      allergens: row.allergens,
-      rating: toNumber(row.rating),
-      review_count: row.review_count,
-      created_at: row.created_at.toISOString(),
-      updated_at: row.updated_at.toISOString(),
-    };
-  }
-
-  private toResponse(row: OfferListRow): OfferResponse {
-    return {
-      id: row.id,
-      business_id: row.business_id,
-      business_location_id: row.business_location_id,
-      title: row.title,
-      description: row.description,
-      image: row.image,
-      category_ids: row.category_ids,
-      categories: row.category_ids.map((id, i) => ({
-        id,
-        name: row.category_names[i],
-        slug: row.category_slugs[i],
-      })),
-      original_price: toNumber(row.original_price),
-      discounted_price: toNumber(row.discounted_price),
-      discount_percentage: toNumberOrNull(row.discount_percentage),
-      stock: row.stock,
-      initial_stock: row.initial_stock,
-      pickup_start: row.pickup_start.toISOString(),
-      pickup_end: row.pickup_end.toISOString(),
-      is_active: row.is_active,
-      includes: row.includes,
-      allergens: row.allergens,
-      rating: toNumber(row.rating),
-      review_count: row.review_count,
-      created_at: row.created_at.toISOString(),
-      updated_at: row.updated_at.toISOString(),
-      business: {
-        id: row.business_id,
-        name: row.business_name,
-        slug: row.business_slug,
-        image: row.business_image,
-        rating: toNumberOrNull(row.business_rating),
-      },
-      location: {
-        id: row.business_location_id,
-        name: row.location_name,
-        address: row.location_address,
-        latitude: toNumber(row.location_latitude),
-        longitude: toNumber(row.location_longitude),
-        zone: row.location_zone,
-      },
-    };
   }
 }

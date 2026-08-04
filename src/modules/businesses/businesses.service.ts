@@ -4,32 +4,35 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { toNumber, toNumberOrNull } from '../../common/utils/numeric';
-import type { AuthUser } from '../../auth/auth.types';
-import { BusinessesRepository } from './businesses.repository';
-import type {
-  BusinessDto,
-  CreateBusinessDto,
-  UpdateBusinessDto,
-  BusinessLocationDto,
-  CreateBusinessLocationDto,
-  UpdateBusinessLocationDto,
-  ListBusinessesQuery,
-  ListBusinessLocationsQuery,
+import {
+  paginatedDataFromQuery,
+  type BusinessDto,
+  type BusinessLocationDto,
+  type CreateBusinessDto,
+  type CreateBusinessLocationDto,
+  type ListBusinessesQuery,
+  type ListBusinessLocationsQuery,
+  type PaginatedData,
+  type UpdateBusinessDto,
+  type UpdateBusinessLocationDto,
 } from '@0xc1x/role-commons';
+import type { AuthUser } from '../../auth/auth.types';
+import {
+  BusinessesRepository,
+  type BusinessRow,
+  type BusinessUpdate,
+  type BusinessLocationUpdate,
+} from './businesses.repository';
+import { BusinessMapper } from './businesses.mapper';
 
 @Injectable()
 export class BusinessesService {
   constructor(private readonly businessesRepository: BusinessesRepository) {}
 
-  // Business CRUD
   async list(
     user: AuthUser,
     query: ListBusinessesQuery,
-  ): Promise<{
-    data: BusinessDto[];
-    meta: { page: number; limit: number; total: number; total_pages: number };
-  }> {
+  ): Promise<PaginatedData<BusinessDto>> {
     if (user.role === 'admin') {
       return this.listAll(query);
     }
@@ -38,29 +41,22 @@ export class BusinessesService {
       user.id,
       query,
     );
-    return {
-      data: items.map((row) => this.toBusinessDto(row)),
-      meta: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        total_pages: Math.ceil(total / query.limit) || 0,
-      },
-    };
+    return paginatedDataFromQuery(
+      items.map((row) => BusinessMapper.toDto(row)),
+      { page: query.page, limit: query.limit },
+      total,
+    );
   }
 
-  private async listAll(query: ListBusinessesQuery) {
-    // For admin, list all businesses - we'll add a separate method for this
+  private async listAll(
+    query: ListBusinessesQuery,
+  ): Promise<PaginatedData<BusinessDto>> {
     const { items, total } = await this.businessesRepository.listAll(query);
-    return {
-      data: items.map((row) => this.toBusinessDto(row)),
-      meta: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        total_pages: Math.ceil(total / query.limit) || 0,
-      },
-    };
+    return paginatedDataFromQuery(
+      items.map((row) => BusinessMapper.toDto(row)),
+      { page: query.page, limit: query.limit },
+      total,
+    );
   }
 
   async getById(user: AuthUser, id: string): Promise<BusinessDto> {
@@ -69,7 +65,7 @@ export class BusinessesService {
       throw new NotFoundException(`Business ${id} not found`);
     }
     await this.assertCanView(user, row);
-    return this.toBusinessDto(row);
+    return BusinessMapper.toDto(row);
   }
 
   async create(
@@ -77,11 +73,9 @@ export class BusinessesService {
     body: CreateBusinessDto,
   ): Promise<BusinessDto> {
     if (user.role !== 'admin') {
-      // Non-admin users create business with themselves as owner
       body.owner_id = user.id;
     }
 
-    // Check slug uniqueness
     const existing = await this.businessesRepository.findBySlug(body.slug);
     if (existing) {
       throw new BadRequestException('Slug already exists');
@@ -104,7 +98,7 @@ export class BusinessesService {
       });
     });
 
-    return this.toBusinessDto(created);
+    return BusinessMapper.toDto(created);
   }
 
   async update(
@@ -126,7 +120,7 @@ export class BusinessesService {
     }
 
     const updated = await this.businessesRepository.transaction(async (tx) => {
-      const patch: Record<string, unknown> = {};
+      const patch: BusinessUpdate = {};
       if (body.name !== undefined) patch.name = body.name;
       if (body.type !== undefined) patch.type = body.type;
       if (body.slug !== undefined) patch.slug = body.slug;
@@ -136,18 +130,19 @@ export class BusinessesService {
       if (body.phone !== undefined) patch.phone = body.phone;
       if (body.email !== undefined) patch.email = body.email;
       if (body.website !== undefined) patch.website = body.website;
-      if (body.commission_rate !== undefined && body.commission_rate !== null)
+      if (body.commission_rate !== undefined && body.commission_rate !== null) {
         patch.commission_rate = body.commission_rate.toString();
+      }
       if (body.is_active !== undefined) patch.is_active = body.is_active;
 
-      const row = await this.businessesRepository.update(tx, id, patch as any);
+      const row = await this.businessesRepository.update(tx, id, patch);
       if (!row) {
         throw new NotFoundException(`Business ${id} not found`);
       }
       return row;
     });
 
-    return this.toBusinessDto(updated);
+    return BusinessMapper.toDto(updated);
   }
 
   async remove(user: AuthUser, id: string): Promise<void> {
@@ -162,15 +157,11 @@ export class BusinessesService {
     });
   }
 
-  // Business Locations CRUD
   async listLocations(
     user: AuthUser,
     businessId: string,
     query: ListBusinessLocationsQuery,
-  ): Promise<{
-    data: BusinessLocationDto[];
-    meta: { page: number; limit: number; total: number; total_pages: number };
-  }> {
+  ): Promise<PaginatedData<BusinessLocationDto>> {
     await this.assertCanViewBusiness(user, businessId);
 
     const { items, total } =
@@ -178,15 +169,11 @@ export class BusinessesService {
         businessId,
         query,
       );
-    return {
-      data: items.map((row) => this.toLocationDto(row)),
-      meta: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        total_pages: Math.ceil(total / query.limit) || 0,
-      },
-    };
+    return paginatedDataFromQuery(
+      items.map((row) => BusinessMapper.toLocationDto(row)),
+      { page: query.page, limit: query.limit },
+      total,
+    );
   }
 
   async getLocation(
@@ -200,7 +187,7 @@ export class BusinessesService {
     if (!row || row.business_id !== businessId) {
       throw new NotFoundException(`Location ${locationId} not found`);
     }
-    return this.toLocationDto(row);
+    return BusinessMapper.toLocationDto(row);
   }
 
   async createLocation(
@@ -209,11 +196,6 @@ export class BusinessesService {
     body: CreateBusinessLocationDto,
   ): Promise<BusinessLocationDto> {
     await this.assertCanMutateBusiness(user, businessId);
-
-    if (body.is_headquarter) {
-      // Ensure only one headquarter per business
-      // We'll handle this in the DB or here - for now let DB handle
-    }
 
     const created = await this.businessesRepository.transaction(async (tx) => {
       return this.businessesRepository.insertLocation(tx, {
@@ -229,7 +211,7 @@ export class BusinessesService {
       });
     });
 
-    return this.toLocationDto(created);
+    return BusinessMapper.toLocationDto(created);
   }
 
   async updateLocation(
@@ -246,7 +228,7 @@ export class BusinessesService {
     }
 
     const updated = await this.businessesRepository.transaction(async (tx) => {
-      const patch: Record<string, unknown> = {};
+      const patch: BusinessLocationUpdate = {};
       if (body.name !== undefined) patch.name = body.name;
       if (body.address !== undefined) patch.address = body.address;
       if (body.phone !== undefined) patch.phone = body.phone;
@@ -262,7 +244,7 @@ export class BusinessesService {
       const row = await this.businessesRepository.updateLocation(
         tx,
         locationId,
-        patch as any,
+        patch,
       );
       if (!row) {
         throw new NotFoundException(`Location ${locationId} not found`);
@@ -270,7 +252,7 @@ export class BusinessesService {
       return row;
     });
 
-    return this.toLocationDto(updated);
+    return BusinessMapper.toLocationDto(updated);
   }
 
   async removeLocation(
@@ -294,7 +276,7 @@ export class BusinessesService {
 
   private async assertCanView(
     user: AuthUser,
-    business: any,
+    business: BusinessRow,
   ): Promise<void> {
     if (user.role === 'admin') return;
     const isOwner = await this.businessesRepository.isOwner(
@@ -319,7 +301,7 @@ export class BusinessesService {
 
   private async assertCanMutate(
     user: AuthUser,
-    business: any,
+    business: BusinessRow,
   ): Promise<void> {
     if (user.role === 'admin') return;
     const isOwner = await this.businessesRepository.isOwner(
@@ -340,45 +322,5 @@ export class BusinessesService {
     if (!isOwner) {
       throw new ForbiddenException('You can only manage businesses you own');
     }
-  }
-
-  private toBusinessDto(row: any): BusinessDto {
-    return {
-      id: row.id,
-      owner_id: row.owner_id,
-      name: row.name,
-      type: row.type,
-      slug: row.slug,
-      image: row.image,
-      cover_image: row.cover_image,
-      description: row.description,
-      phone: row.phone,
-      email: row.email,
-      website: row.website,
-      commission_rate: toNumberOrNull(row.commission_rate),
-      balance: toNumberOrNull(row.balance),
-      rating: toNumberOrNull(row.rating),
-      review_count: row.review_count ?? null,
-      is_active: row.is_active,
-      created_at: row.created_at.toISOString(),
-      updated_at: row.updated_at.toISOString(),
-    };
-  }
-
-  private toLocationDto(row: any): BusinessLocationDto {
-    return {
-      id: row.id,
-      business_id: row.business_id,
-      name: row.name,
-      address: row.address,
-      phone: row.phone,
-      latitude: toNumber(row.latitude),
-      longitude: toNumber(row.longitude),
-      is_active: row.is_active,
-      zone: row.zone,
-      is_headquarter: row.is_headquarter,
-      created_at: row.created_at.toISOString(),
-      updated_at: row.updated_at.toISOString(),
-    };
   }
 }

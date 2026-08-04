@@ -5,7 +5,11 @@ import postgres, { type Sql } from 'postgres';
 import type { Env } from '../config/env.schema';
 import { DRIZZLE, POSTGRES_CLIENT } from './database.tokens';
 
-/** Drizzle 1.0 RC: typed without RQB schema map (tables imported at call sites). */
+/**
+ * Drizzle 1.x postgres-js client.
+ * RQB typing uses `relations` (via `defineRelations`), not the legacy table `schema` map.
+ * Tables are imported directly from `./schema/*` in repositories.
+ */
 export type Database = PostgresJsDatabase;
 
 @Global()

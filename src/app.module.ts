@@ -3,11 +3,11 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
-import { AuthModule } from './auth/auth.module';
+import { SecurityModule } from './auth/security.module';
 import { validateEnv } from './config/env.schema';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './modules/health/health.module';
-import { AuthModule as AuthFeatureModule } from './modules/auth/auth.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { OrdersModule } from './modules/orders/orders.module';
@@ -45,8 +45,8 @@ import { BusinessesModule } from './modules/businesses/businesses.module';
       },
     ]),
     DatabaseModule,
+    SecurityModule,
     AuthModule,
-    AuthFeatureModule,
     HealthModule,
     CategoriesModule,
     OffersModule,

@@ -7,26 +7,24 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import type { OrderStatus } from '@0xc1x/role-commons';
-import { toNumber } from '../../common/utils/numeric';
+import {
+  paginatedDataFromQuery,
+  type CreateOrderRequest,
+  type ListBusinessOrdersQuery,
+  type ListOrdersQuery,
+  type PaginatedData,
+  type UpdateOrderStatusRequest,
+} from '@0xc1x/role-commons';
 import type { AuthUser } from '../../auth/auth.types';
 import { OffersRepository } from '../offers/offers.repository';
 import {
   canActorTransition,
-  canViewPickupCode,
   isTransitionAllowed,
   shouldRestockOnTransition,
   type OrderEventSource,
 } from './order-status.machine';
+import { OrderMapper, type OrderResponse } from './orders.mapper';
 import { OrdersRepository } from './orders.repository';
-import type {
-  CreateOrderRequest,
-  ListBusinessOrdersQuery,
-  ListOrdersQuery,
-  UpdateOrderStatusRequest,
-} from '@0xc1x/role-commons';
-import type { orders as ordersTable } from '../../database/schema';
-
-type OrderRow = typeof ordersTable.$inferSelect;
 
 @Injectable()
 export class OrdersService {
@@ -35,129 +33,124 @@ export class OrdersService {
     private readonly offersRepository: OffersRepository,
   ) {}
 
-  async create(user: AuthUser, body: CreateOrderRequest) {
+  async create(user: AuthUser, body: CreateOrderRequest): Promise<OrderResponse> {
     // coupon_code reserved for later wave
     void body.coupon_code;
 
-    const created = await this.ordersRepository.dbClient.transaction(
-      async (tx) => {
-        const existing = await this.ordersRepository.findActiveByUserAndOffer(
-          tx,
-          user.id,
-          body.offer_id,
+    const created = await this.ordersRepository.transaction(async (tx) => {
+      const existing = await this.ordersRepository.findActiveByUserAndOffer(
+        tx,
+        user.id,
+        body.offer_id,
+      );
+      if (existing) {
+        throw new ConflictException(
+          'You already have an active order for this offer',
         );
-        if (existing) {
-          throw new ConflictException(
-            'You already have an active order for this offer',
-          );
-        }
+      }
 
-        const offer = await this.offersRepository.findByIdForUpdate(
-          tx,
-          body.offer_id,
-        );
-        if (!offer) {
-          throw new NotFoundException(`Offer ${body.offer_id} not found`);
-        }
+      const offer = await this.offersRepository.findByIdForUpdate(
+        tx,
+        body.offer_id,
+      );
+      if (!offer) {
+        throw new NotFoundException(`Offer ${body.offer_id} not found`);
+      }
 
-        const now = new Date();
-        if (!offer.is_active) {
-          throw new ConflictException('Offer is not active');
-        }
-        if (offer.stock < 1) {
-          throw new ConflictException('Offer is out of stock');
-        }
-        if (offer.pickup_end <= now) {
-          throw new ConflictException('Offer pickup window has ended');
-        }
+      const now = new Date();
+      if (!offer.is_active) {
+        throw new ConflictException('Offer is not active');
+      }
+      if (offer.stock < 1) {
+        throw new ConflictException('Offer is out of stock');
+      }
+      if (offer.pickup_end <= now) {
+        throw new ConflictException('Offer pickup window has ended');
+      }
 
-        const decremented = await this.offersRepository.decrementStock(
-          tx,
-          offer.id,
-          1,
-        );
-        if (!decremented) {
-          throw new ConflictException('Offer is out of stock');
-        }
+      const decremented = await this.offersRepository.decrementStock(
+        tx,
+        offer.id,
+        1,
+      );
+      if (!decremented) {
+        throw new ConflictException('Offer is out of stock');
+      }
 
-        const orderNumber = this.generateOrderNumber();
-        const pickupCode = this.generatePickupCode();
+      const orderNumber = this.generateOrderNumber();
+      const pickupCode = this.generatePickupCode();
 
-        const order = await this.ordersRepository.insertOrder(tx, {
-          user_id: user.id,
-          offer_id: offer.id,
-          business_id: offer.business_id,
-          order_number: orderNumber,
-          status: 'pending',
-          price: offer.discounted_price,
-          original_price: offer.original_price,
-          pickup_code: pickupCode,
-          pickup_time: offer.pickup_start,
-          coupon_id: null,
-        });
+      const order = await this.ordersRepository.insertOrder(tx, {
+        user_id: user.id,
+        offer_id: offer.id,
+        business_id: offer.business_id,
+        order_number: orderNumber,
+        status: 'pending',
+        price: offer.discounted_price,
+        original_price: offer.original_price,
+        pickup_code: pickupCode,
+        pickup_time: offer.pickup_start,
+        coupon_id: null,
+      });
 
-        await this.ordersRepository.insertEvent(tx, {
-          order_id: order.id,
-          status: 'pending',
-          previous_status: null,
-          changed_by: user.id,
-          reason: 'Order created',
-          metadata: { source: 'api' satisfies OrderEventSource },
-        });
+      await this.ordersRepository.insertEvent(tx, {
+        order_id: order.id,
+        status: 'pending',
+        previous_status: null,
+        changed_by: user.id,
+        reason: 'Order created',
+        metadata: { source: 'api' satisfies OrderEventSource },
+      });
 
-        return order;
-      },
-    );
+      return order;
+    });
 
-    return this.toResponse(created, {
+    return OrderMapper.toResponse(created, {
       isOrderOwner: true,
       isBusinessOwner: false,
       isAdmin: user.role === 'admin',
     });
   }
 
-  async listMine(user: AuthUser, query: ListOrdersQuery) {
+  async listMine(
+    user: AuthUser,
+    query: ListOrdersQuery,
+  ): Promise<PaginatedData<OrderResponse>> {
     const { items, total } = await this.ordersRepository.listForUser(user.id, {
       status: query.status,
       page: query.page,
       limit: query.limit,
     });
-    return {
-      data: items.map((row) =>
-        this.toResponse(row, {
+    return paginatedDataFromQuery(
+      items.map((row) =>
+        OrderMapper.toResponse(row, {
           isOrderOwner: true,
           isBusinessOwner: false,
           isAdmin: user.role === 'admin',
         }),
       ),
-      meta: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        total_pages: Math.ceil(total / query.limit) || 0,
-      },
-    };
+      { page: query.page, limit: query.limit },
+      total,
+    );
   }
 
-  async listForBusiness(user: AuthUser, query: ListBusinessOrdersQuery) {
+  async listForBusiness(
+    user: AuthUser,
+    query: ListBusinessOrdersQuery,
+  ): Promise<PaginatedData<OrderResponse>> {
     let businessId = query.business_id;
 
     if (!businessId) {
-      // Default to first owned business when not specified.
       const owned = await this.offersRepository.findBusinessIdsOwnedBy(user.id);
       if (owned.length === 0 && user.role !== 'admin') {
         throw new ForbiddenException('You do not own any business');
       }
       if (owned.length === 0) {
-        return {
-          data: [],
-          meta: {
-            page: query.page,
-            limit: query.limit,
-            total: 0,
-            total_pages: 0,
-          },
-        };
+        return paginatedDataFromQuery(
+          [],
+          { page: query.page, limit: query.limit },
+          0,
+        );
       }
       if (owned.length > 1 && user.role !== 'admin') {
         throw new UnprocessableEntityException(
@@ -176,7 +169,7 @@ export class OrdersService {
     }
 
     const { items, total } = await this.ordersRepository.listForBusiness(
-      businessId,
+      businessId!,
       {
         status: query.status,
         page: query.page,
@@ -184,24 +177,20 @@ export class OrdersService {
       },
     );
 
-    return {
-      data: items.map((row) =>
-        this.toResponse(row, {
+    return paginatedDataFromQuery(
+      items.map((row) =>
+        OrderMapper.toResponse(row, {
           isOrderOwner: row.user_id === user.id,
           isBusinessOwner: true,
           isAdmin: user.role === 'admin',
         }),
       ),
-      meta: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        total_pages: Math.ceil(total / query.limit) || 0,
-      },
-    };
+      { page: query.page, limit: query.limit },
+      total,
+    );
   }
 
-  async getById(user: AuthUser, id: string) {
+  async getById(user: AuthUser, id: string): Promise<OrderResponse> {
     const row = await this.ordersRepository.findByIdWithBusinessOwner(id);
     if (!row) {
       throw new NotFoundException(`Order ${id} not found`);
@@ -213,7 +202,7 @@ export class OrdersService {
       throw new ForbiddenException('You cannot access this order');
     }
 
-    return this.toResponse(row.order, {
+    return OrderMapper.toResponse(row.order, {
       isOrderOwner: isOwner,
       isBusinessOwner,
       isAdmin: user.role === 'admin',
@@ -224,76 +213,74 @@ export class OrdersService {
     user: AuthUser,
     id: string,
     body: UpdateOrderStatusRequest,
-  ) {
-    const updated = await this.ordersRepository.dbClient.transaction(
-      async (tx) => {
-        const locked = await this.ordersRepository.findByIdForUpdate(tx, id);
-        if (!locked) {
-          throw new NotFoundException(`Order ${id} not found`);
-        }
+  ): Promise<OrderResponse> {
+    const updated = await this.ordersRepository.transaction(async (tx) => {
+      const locked = await this.ordersRepository.findByIdForUpdate(tx, id);
+      if (!locked) {
+        throw new NotFoundException(`Order ${id} not found`);
+      }
 
-        const current = locked.order.status as OrderStatus;
-        const next = body.status;
+      const current = locked.order.status as OrderStatus;
+      const next = body.status;
 
-        if (current === next) {
-          return locked.order;
-        }
+      if (current === next) {
+        return locked.order;
+      }
 
-        if (!isTransitionAllowed(current, next)) {
-          throw new UnprocessableEntityException(
-            `Cannot transition order from '${current}' to '${next}'`,
-          );
-        }
-
-        const isOrderOwner = locked.order.user_id === user.id;
-        const isBusinessOwner = locked.business_owner_id === user.id;
-
-        if (
-          !canActorTransition(user.role, current, next, {
-            isOrderOwner,
-            isBusinessOwner,
-          })
-        ) {
-          throw new ForbiddenException(
-            `Role '${user.role}' cannot transition order to '${next}'`,
-          );
-        }
-
-        const order = await this.ordersRepository.updateStatus(
-          tx,
-          id,
-          next,
-          current,
+      if (!isTransitionAllowed(current, next)) {
+        throw new UnprocessableEntityException(
+          `Cannot transition order from '${current}' to '${next}'`,
         );
-        if (!order) {
-          throw new ConflictException(
-            'Order status changed concurrently; retry the request',
-          );
-        }
+      }
 
-        if (shouldRestockOnTransition(current, next)) {
-          await this.offersRepository.incrementStock(
-            tx,
-            locked.order.offer_id,
-            1,
-          );
-        }
+      const isOrderOwner = locked.order.user_id === user.id;
+      const isBusinessOwner = locked.business_owner_id === user.id;
 
-        const source: OrderEventSource =
-          user.role === 'admin' ? 'admin' : 'api';
+      if (
+        !canActorTransition(user.role, current, next, {
+          isOrderOwner,
+          isBusinessOwner,
+        })
+      ) {
+        throw new ForbiddenException(
+          `Role '${user.role}' cannot transition order to '${next}'`,
+        );
+      }
 
-        await this.ordersRepository.insertEvent(tx, {
-          order_id: id,
-          status: next,
-          previous_status: current,
-          changed_by: user.id,
-          reason: body.reason ?? null,
-          metadata: { source },
-        });
+      const order = await this.ordersRepository.updateStatus(
+        tx,
+        id,
+        next,
+        current,
+      );
+      if (!order) {
+        throw new ConflictException(
+          'Order status changed concurrently; retry the request',
+        );
+      }
 
-        return order;
-      },
-    );
+      if (shouldRestockOnTransition(current, next)) {
+        await this.offersRepository.incrementStock(
+          tx,
+          locked.order.offer_id,
+          1,
+        );
+      }
+
+      const source: OrderEventSource =
+        user.role === 'admin' ? 'admin' : 'api';
+
+      await this.ordersRepository.insertEvent(tx, {
+        order_id: id,
+        status: next,
+        previous_status: current,
+        changed_by: user.id,
+        reason: body.reason ?? null,
+        metadata: { source },
+      });
+
+      return order;
+    });
 
     const isOrderOwner = updated.user_id === user.id;
     const isBusinessOwner = await this.ordersRepository.isBusinessOwner(
@@ -301,7 +288,7 @@ export class OrdersService {
       user.id,
     );
 
-    return this.toResponse(updated, {
+    return OrderMapper.toResponse(updated, {
       isOrderOwner,
       isBusinessOwner,
       isAdmin: user.role === 'admin',
@@ -320,7 +307,7 @@ export class OrdersService {
     let expired = 0;
 
     for (const candidate of candidates) {
-      await this.ordersRepository.dbClient.transaction(async (tx) => {
+      await this.ordersRepository.transaction(async (tx) => {
         const locked = await this.ordersRepository.findByIdForUpdate(
           tx,
           candidate.orderId,
@@ -365,39 +352,6 @@ export class OrdersService {
     }
 
     return { expired };
-  }
-
-  private toResponse(
-    row: OrderRow,
-    viewer: {
-      isOrderOwner: boolean;
-      isBusinessOwner: boolean;
-      isAdmin: boolean;
-    },
-  ) {
-    const status = row.status as OrderStatus;
-    const showPickupCode = canViewPickupCode({
-      status,
-      isOrderOwner: viewer.isOrderOwner,
-      isBusinessOwner: viewer.isBusinessOwner,
-      isAdmin: viewer.isAdmin,
-    });
-
-    return {
-      id: row.id,
-      user_id: row.user_id,
-      offer_id: row.offer_id,
-      business_id: row.business_id,
-      order_number: row.order_number,
-      status: row.status,
-      price: toNumber(row.price),
-      original_price: toNumber(row.original_price),
-      pickup_code: showPickupCode ? row.pickup_code : null,
-      pickup_time: row.pickup_time ? row.pickup_time.toISOString() : null,
-      coupon_id: row.coupon_id,
-      created_at: row.created_at.toISOString(),
-      updated_at: row.updated_at.toISOString(),
-    };
   }
 
   private generateOrderNumber(): string {

@@ -20,6 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "db:pull": "drizzle-kit pull",
     "db:studio": "drizzle-kit studio",
+    "db:drift": "bash scripts/db-drift-check.sh",
+    "openapi:export": "tsx scripts/export-openapi.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

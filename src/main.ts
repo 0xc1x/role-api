@@ -4,6 +4,8 @@ import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { apiReference } from '@scalar/nestjs-api-reference';
+import type { NextFunction, Request, Response } from 'express';
+import { json } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { parseCorsOrigins, type Env } from './config/env.schema';
@@ -11,6 +13,7 @@ import { parseCorsOrigins, type Env } from './config/env.schema';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log', 'debug'],
+    bodyParser: false,
   });
 
   const config = app.get(ConfigService<Env, true>);
@@ -32,8 +35,14 @@ async function bootstrap() {
   );
 
   app.use(helmet());
-  app.use((req, res, next) => {
-    res.setHeader('x-request-id', req.headers['x-request-id'] || crypto.randomUUID());
+  app.use(json({ limit: '1mb' }));
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const incoming = req.headers['x-request-id'];
+    const requestId =
+      typeof incoming === 'string' && incoming.length > 0
+        ? incoming
+        : crypto.randomUUID();
+    res.setHeader('x-request-id', requestId);
     next();
   });
 
@@ -51,7 +60,7 @@ async function bootstrap() {
   if (nodeEnv === 'production') {
     app.use(
       '/docs',
-      (req, res, next) => {
+      (req: Request, res: Response, next: NextFunction) => {
         const auth = req.headers.authorization;
         const expected = `Basic ${Buffer.from(
           `${config.get('DOCS_USER')}:${config.get('DOCS_PASSWORD')}`,
@@ -77,6 +86,7 @@ async function bootstrap() {
     );
   }
 
+  app.enableShutdownHooks();
   await app.listen(port);
   const logger = new Logger('Bootstrap');
   logger.log(`Role API listening on http://localhost:${port}`);
