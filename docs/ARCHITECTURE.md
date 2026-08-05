@@ -48,7 +48,7 @@ PaginatedData<T> = { data: T[]; meta: PaginationMeta }
 
 - **Source of truth:** Supabase (migrations / dashboard). This repo only **mirrors** tables in Drizzle.
 - Connection: privileged pooler URL; authorization is enforced in Nest (roles + ownership).
-- Schema map is passed to `drizzle({ client, schema })` for typed relational queries.
+- Drizzle 1.x uses `postgres-js` via `drizzle({ client })`. Tables are imported from `./schema/*` in repositories. Relational query builder (`defineRelations`) can be added when needed — the legacy table `schema` map is not used.
 - Drift signal: `npm run db:drift` (informational vs remote pull).
 
 ## Shared package
@@ -61,3 +61,5 @@ PaginatedData<T> = { data: T[]; meta: PaginationMeta }
 
 For deploy, publish a semver version (e.g. GitHub Packages) and pin a range instead of `file:`.
 Rebuild commons after type changes: `cd ../role-commons && bun run build && cd ../role-api && npm install`.
+
+**Jest:** commons is ESM-only (`"type": "module"`). Unit tests map `@0xc1x/role-commons` to the TypeScript source so `ts-jest` can compile it (see `package.json` → `jest.moduleNameMapper`).

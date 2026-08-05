@@ -14,17 +14,15 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
 
-    // Phase 2: toward full strict — enabled incrementally
+    // Phase 2: full strict surface
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
     "strictBindCallApply": true,
     "noFallthroughCasesInSwitch": true,
-
-    // Deferred (enable module-by-module when noise is low):
-    // "noUnusedLocals": true,
-    // "noUnusedParameters": true,
-    // "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
 
     "removeComments": true,
     "sourceMap": true

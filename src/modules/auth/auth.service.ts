@@ -8,7 +8,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { eq } from 'drizzle-orm';
 import { createClient } from '@supabase/supabase-js';
-import type { AuthResponse, UserResponse } from '@supabase/supabase-js';
 import type { Env } from '../../config/env.schema';
 import { type Database } from '../../database/database.module';
 import { DRIZZLE } from '../../database/database.tokens';
@@ -159,7 +158,7 @@ export class AuthService {
       refresh_token: body.refresh_token,
     });
 
-    if (error || !data.session) {
+    if (error || !data.session || !data.user) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
@@ -195,7 +194,7 @@ export class AuthService {
           }
         : {
             id: user.id,
-            email: user.email,
+            email: user.email ?? '',
             full_name: null,
             avatar_url: null,
             role: 'user' as const,
@@ -203,7 +202,9 @@ export class AuthService {
     };
   }
 
-  async logout(body: LogoutRequest): Promise<{ message: string }> {
+  async logout(_body: LogoutRequest): Promise<{ message: string }> {
+    // Refresh/access tokens are client-held; global signOut clears server session cookies if any.
+    void _body;
     const { error } = await this.supabaseAnon.auth.signOut({
       scope: 'global',
     });

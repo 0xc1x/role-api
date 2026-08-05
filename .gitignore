@@ -4,6 +4,12 @@
 /build
 /tmp
 
+# Package managers — npm only for this repo
+bun.lock
+bun.lockb
+yarn.lock
+pnpm-lock.yaml
+
 # Logs
 logs
 *.log

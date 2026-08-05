@@ -21,6 +21,7 @@
     "db:pull": "drizzle-kit pull",
     "db:studio": "drizzle-kit studio",
     "db:drift": "bash scripts/db-drift-check.sh",
+    "commons:check": "node scripts/check-commons-align.mjs",
     "openapi:export": "tsx scripts/export-openapi.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -88,7 +89,21 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "allowJs": true,
+            "esModuleInterop": true
+          }
+        }
+      ]
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!@0xc1x/role-commons/)"
+    ],
+    "moduleNameMapper": {
+      "^@0xc1x/role-commons$": "<rootDir>/../../role-commons/src/index.ts"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"

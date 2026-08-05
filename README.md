@@ -160,7 +160,8 @@ For production deploys, prefer a published semver (GitHub Packages / private npm
 | `npm run build` | Compile |
 | `npm test` | Unit tests |
 | `npm run lint` | ESLint |
-| `npm run typecheck` | `tsc --noEmit` (strict mode) |
+| `npm run typecheck` | `tsc --noEmit` (full strict) |
+| `npm run commons:check` | Align `@0xc1x/role-commons` (resolve, dist, zod major) |
 | `npm run openapi:export` | Write `openapi/openapi.json` |
 | `npm run db:drift` | Informational schema drift check |
 

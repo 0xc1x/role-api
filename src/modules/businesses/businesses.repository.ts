@@ -4,8 +4,6 @@ import {
   count,
   desc,
   eq,
-  inArray,
-  isNull,
   sql,
   type SQL,
 } from 'drizzle-orm';
