@@ -4,6 +4,20 @@
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
+    "^.+\\.(t|j)s$": [
+      "<rootDir>/../node_modules/ts-jest/dist/index.js",
+      {
+        "tsconfig": {
+          "allowJs": true,
+          "esModuleInterop": true,
+          "experimentalDecorators": true,
+          "emitDecoratorMetadata": true,
+          "strict": false
+        }
+      }
+    ]
+  },
+  "moduleNameMapper": {
+    "^@0xc1x/role-commons$": "<rootDir>/../../role-commons/src/index.ts"
   }
 }

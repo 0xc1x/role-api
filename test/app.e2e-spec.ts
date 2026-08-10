@@ -5,15 +5,25 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 
 /**
- * Smoke e2e — requires valid env + DB for full suite.
- * Skips if DATABASE_URL is missing so CI without secrets still passes unit tests.
+ * Smoke e2e — requires valid env + reachable DB.
+ *
+ * Skips when DATABASE_URL (or full env) is missing so local/CI unit jobs stay green.
+ * Full marketplace e2e (auth → create order → stock) needs a test Supabase/Postgres
+ * and is tracked for a later wave (testcontainers / compose service).
  */
 const hasDb = Boolean(process.env.DATABASE_URL);
+const hasSupabase =
+  Boolean(process.env.SUPABASE_URL) &&
+  Boolean(process.env.SUPABASE_JWT_SECRET) &&
+  Boolean(process.env.SUPABASE_ANON_KEY) &&
+  Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-(hasDb ? describe : describe.skip)('AppController (e2e)', () => {
+const canBoot = hasDb && hasSupabase;
+
+(canBoot ? describe : describe.skip)('App (e2e)', () => {
   let app: INestApplication<App>;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -23,11 +33,11 @@ const hasDb = Boolean(process.env.DATABASE_URL);
     await app.init();
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
     await app.close();
   });
 
-  it('/api/v1/health (GET)', () => {
+  it('GET /api/v1/health returns status payload', () => {
     return request(app.getHttpServer())
       .get('/api/v1/health')
       .expect(200)
@@ -35,5 +45,41 @@ const hasDb = Boolean(process.env.DATABASE_URL);
         expect(res.body).toHaveProperty('status');
         expect(res.body).toHaveProperty('database');
       });
+  });
+
+  it('GET /api/v1/offers is public', () => {
+    return request(app.getHttpServer())
+      .get('/api/v1/offers')
+      .expect(200)
+      .expect((res) => {
+        expect(res.body).toHaveProperty('data');
+        expect(res.body).toHaveProperty('meta');
+      });
+  });
+
+  it('POST /api/v1/orders without token is 401', () => {
+    return request(app.getHttpServer())
+      .post('/api/v1/orders')
+      .send({ offer_id: '00000000-0000-4000-8000-000000000001' })
+      .expect(401);
+  });
+
+  it('POST /api/v1/auth/login with bad credentials is 401', () => {
+    return request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'nobody@example.com', password: 'wrong-password' })
+      .expect(401);
+  });
+});
+
+describe('App e2e (always)', () => {
+  it('documents skip reason when env is incomplete', () => {
+    if (!canBoot) {
+      // eslint-disable-next-line no-console
+      console.info(
+        '[e2e] Skipped full suite: set DATABASE_URL + SUPABASE_* to enable.',
+      );
+    }
+    expect(true).toBe(true);
   });
 });

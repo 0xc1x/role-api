@@ -176,6 +176,7 @@ describe('AuthService', () => {
         error: null,
       });
 
+      mockDb.insert.mockReturnValue(mockDb);
       mockDb.values.mockReturnValue(mockDb);
 
       const result = await service.register({
@@ -188,6 +189,13 @@ describe('AuthService', () => {
       expect(result.user!.email).toBe('new@test.com');
       expect(result.user!.full_name).toBe('New User');
       expect(result.user!.role).toBe('user');
+      // Public register must never elevate privileges.
+      expect(mockDb.values).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'user' }),
+      );
+      expect(mockDb.values).not.toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'admin' }),
+      );
     });
 
     it('should throw ConflictException when email already registered', async () => {
